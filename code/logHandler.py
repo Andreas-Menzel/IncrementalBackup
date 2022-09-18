@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+# This file is taken from https://github.com/tizianerlenberg/multissh
+
 import logging
 import sys
 from datetime import datetime
