@@ -16,10 +16,11 @@
 # - Implement own logHandler
 #   -> pass log-filename
 #   -> overwrite / append
+# - def send log files on error
 
 import logHandler
 
-import argparse
+from argparse import ArgumentParser, SUPPRESS
 from datetime import datetime
 from pathlib import Path
 from shutil import rmtree
@@ -30,39 +31,93 @@ import time
 
 script_version = '1.0.0'
 
-# Setup argument parser
-def check_not_negative(value):
-    ivalue = int(value)
-    if ivalue < 0:
-        raise argparse.ArgumentTypeError("%s is an invalid non-negative int value" % value)
-    return ivalue
+datetime_string_now = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
 
-parser = argparse.ArgumentParser(description='Create incremental backups.', prog='IncrementalBackup')
-parser.add_argument('--version', action='version', version='%(prog)s ' + script_version)
-parser.add_argument('--keep',
-    default=0,
-    type=check_not_negative,
-    help='Number of backups to keep. 0 = no limit')
-args = parser.parse_args()
-
-# Data directory
-path_src = Path('tmp/data')
-# Backup directory
-path_dst = Path('tmp/backup').joinpath(getfqdn())
+# Data and backup directory
+path_src = None
+path_dst = None
 
 # Files that must be present in path_src / path_dst
-check_file_src = path_src.joinpath('.backup_src_check')
-check_file_dst = path_dst.joinpath('.backup_dst_check')
+check_file_src = None
+check_file_dst = None
 
-backup_excludes = [f'{path_src.absolute()}/.Trash-1000', f'{path_src.absolute()}/lost+found']
+keep_n_backups = 0
 
-datetime_string_now = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
+backup_excludes = []
 
 # Setup logger
 path_log_files = Path('log-files')
 logger = logHandler.getSimpleLogger(__name__,
                                     streamLogLevel=logHandler.DEBUG,
                                     fileLogLevel=logHandler.DEBUG)
+
+
+# process_argparse
+#
+# Uses argparse to process the arguments given to the script.
+#
+# @return None
+def process_argparse():
+    global path_src
+    global path_dst
+    global check_file_src
+    global check_file_dst
+    global keep_n_backups
+    global script_version
+    global backup_excludes
+
+    def check_not_negative(value):
+        ivalue = int(value)
+        if ivalue < 0:
+            raise argparse.ArgumentTypeError("%s is an invalid non-negative int value" % value)
+        return ivalue
+
+    parser = ArgumentParser(description='Create incremental backups.',
+                            prog='IncrementalBackup',
+                            add_help=False)
+    required_args = parser.add_argument_group('required arguments')
+    optional_args = parser.add_argument_group('optional arguments')
+
+    required_args.add_argument('--src',
+        help='Data directory.',
+        required=True)
+    required_args.add_argument('--dst',
+        help='Backup directory.',
+        required=True)
+
+    optional_args.add_argument('-h',
+        '--help',
+        action='help',
+        default=SUPPRESS,
+        help='show this help message and exit')
+    optional_args.add_argument('--version',
+        action='version',
+        version=f'%(prog)s {script_version}')
+    optional_args.add_argument('--keep',
+        default=0,
+        type=check_not_negative,
+        help='Number of backups to keep. 0 = no limit. Default is 0.')
+    optional_args.add_argument('--exclude',
+        default=[],
+        nargs='+',
+        help='Paths to exclude from the backup.')
+    optional_args.add_argument('--dst_fqdn',
+        default='True',
+        help='Add fully qualified domain name to the backup path. Default is True.')
+
+    args = parser.parse_args()
+
+    path_src = Path(args.src)
+    path_dst = Path(args.dst)
+    
+    if args.dst_fqdn.lower() == 'true':
+        path_dst = path_dst.joinpath(getfqdn())
+
+    check_file_src = path_src.joinpath('.backup_src_check')
+    check_file_dst = path_dst.joinpath('.backup_dst_check')
+
+    keep_n_backups = args.keep
+    backup_excludes = args.exclude
 
 
 # check_requirements
@@ -126,6 +181,7 @@ def prepare_backup():
     global args
     global path_dst
     global path_log_files
+    global keep_n_backups
 
     # Create log-files directory
     if not path_log_files.exists():
@@ -139,11 +195,11 @@ def prepare_backup():
     paths_old_backups = [path for path in paths_old_backups if path.stem not in ['tmp_partial_backup']]
     paths_old_backups.sort()
 
-    # Remove old backups - keep args.keep latest backups
-    if args.keep > 0:
-        keep_n_backups = args.keep
+    # Remove old backups - keep keep_n_backups latest backups
+    if keep_n_backups > 0:
+        keep_n_backups = keep_n_backups
         if backup_to_tmp.exists():
-            logger.warn('Last backup was not finished. Continuing.')
+            logger.warning('Last backup was not finished. Continuing.')
             keep_n_backups -= 1
         backups_to_remove = paths_old_backups[:-keep_n_backups]
         paths_old_backups = paths_old_backups[len(backups_to_remove):]
@@ -154,7 +210,7 @@ def prepare_backup():
 
     # Create tmp_partial_backup folder
     if not backup_to_tmp.exists():
-        if args.keep > 0 and len(paths_old_backups) == args.keep:
+        if keep_n_backups > 0 and len(paths_old_backups) == keep_n_backups:
             backup_to_recycle = min(paths_old_backups)
             logger.info(f'Recycling old backup: "{backup_to_recycle.absolute()}"')
             backup_to_recycle.rename(path_dst.joinpath('tmp_partial_backup'))
@@ -224,6 +280,7 @@ def main():
     global logger
 
     logger.info(f'IncrementalBackup started at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
+    process_argparse()
     if check_requirements():
         prepare_backup()
         do_backup()
