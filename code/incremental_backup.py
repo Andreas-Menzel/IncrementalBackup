@@ -12,8 +12,10 @@
 # @copyright: Copyright (c) 2022 Andreas Menzel
 #-------------------------------------------------------------------------------
 # TODO
-# - upload to Github
 # - Exception Handling rsync
+# - Implement own logHandler
+#   -> pass log-filename
+#   -> overwrite / append
 
 import logHandler
 
@@ -152,7 +154,7 @@ def prepare_backup():
 
     # Create tmp_partial_backup folder
     if not backup_to_tmp.exists():
-        if len(paths_old_backups) == args.keep:
+        if args.keep > 0 and len(paths_old_backups) == args.keep:
             backup_to_recycle = min(paths_old_backups)
             logger.info(f'Recycling old backup: "{backup_to_recycle.absolute()}"')
             backup_to_recycle.rename(path_dst.joinpath('tmp_partial_backup'))
