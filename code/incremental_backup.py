@@ -44,9 +44,9 @@ parser.add_argument('--keep',
 args = parser.parse_args()
 
 # Data directory
-path_src = Path('data')
+path_src = Path('tmp/data')
 # Backup directory
-path_dst = Path('.').joinpath(getfqdn())
+path_dst = Path('tmp/backup').joinpath(getfqdn())
 
 # Files that must be present in path_src / path_dst
 check_file_src = path_src.joinpath('.backup_src_check')
@@ -54,10 +54,13 @@ check_file_dst = path_dst.joinpath('.backup_dst_check')
 
 backup_excludes = [f'{path_src.absolute()}/.Trash-1000', f'{path_src.absolute()}/lost+found']
 
-rsync_log_file = 'rsync.log'
+datetime_string_now = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
 
 # Setup logger
-logger = logHandler.getSimpleLogger(__name__, streamLogLevel=logHandler.DEBUG, fileLogLevel=logHandler.DEBUG)
+path_log_files = Path('log-files')
+logger = logHandler.getSimpleLogger(__name__,
+                                    streamLogLevel=logHandler.DEBUG,
+                                    fileLogLevel=logHandler.DEBUG)
 
 
 # check_requirements
@@ -120,6 +123,12 @@ def prepare_backup():
     global logger
     global args
     global path_dst
+    global path_log_files
+
+    # Create log-files directory
+    if not path_log_files.exists():
+        logger.info(f'Creating log-files directory: "{path_log_files.absolute()}"')
+        path_log_files.mkdir(parents=True, exist_ok=True)
 
     backup_to_tmp = path_dst.joinpath('tmp_partial_backup')
 
@@ -145,7 +154,7 @@ def prepare_backup():
     if not backup_to_tmp.exists():
         if len(paths_old_backups) == args.keep:
             backup_to_recycle = min(paths_old_backups)
-            logger.info(f'Recycling old backup: {backup_to_recycle.absolute()}')
+            logger.info(f'Recycling old backup: "{backup_to_recycle.absolute()}"')
             backup_to_recycle.rename(path_dst.joinpath('tmp_partial_backup'))
         else:
             backup_to_tmp.mkdir(parents=True, exist_ok=True)
@@ -161,7 +170,8 @@ def do_backup():
     global path_src
     global path_dst
     global backup_excludes
-    global rsync_log_file
+    global datetime_string_now
+    global path_log_files
 
     backup_to_tmp = path_dst.joinpath('tmp_partial_backup')
 
@@ -179,7 +189,7 @@ def do_backup():
         logger.info('No backup found.')
 
     # Path of the new incremental backup
-    path_backup = path_dst.joinpath(datetime.today().strftime('%Y-%m-%d_%H:%M:%S'))
+    path_backup = path_dst.joinpath(datetime_string_now)
     logger.info(f'Backup will be done to "{path_backup.absolute()}"')
     
     # Create link-dest string
@@ -194,9 +204,7 @@ def do_backup():
         rsync_cmd_arg_exclude = f'--exclude={{{tmp_string_list}}} '
     
     # Create log-file string
-    rsync_cmd_arg_log_file = ' '
-    if not rsync_log_file is None:
-        rsync_cmd_arg_log_file = f'--log-file {rsync_log_file} '
+    rsync_cmd_arg_log_file = f'--log-file "{path_log_files.absolute()}/{datetime_string_now}_rsync.log" '
 
     rsync_cmd = f'rsync -a --delete {rsync_cmd_arg_exclude}{rsync_cmd_arg_linkDest}"{path_src.absolute()}/" "{backup_to_tmp}"'
     rsync_cmd += f' {rsync_cmd_arg_log_file}'
