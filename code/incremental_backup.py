@@ -20,7 +20,7 @@
 
 import logHandler
 
-from argparse import ArgumentParser, SUPPRESS
+from argparse import ArgumentParser, ArgumentTypeError, SUPPRESS
 from datetime import datetime
 from pathlib import Path
 from shutil import rmtree
@@ -33,9 +33,22 @@ _SCRIPT_VERSION = '1.0.0'
 
 _DATETIME_STRING_NOW = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
 
-# Data and backup directory
-_PATH_SRC = None
-_PATH_DST = None
+# Paths to the source directories and source-check-files
+# [
+#     {
+#         'id'         : <source_identifier>, # string
+#         'path'       : <path_to_source>,    # Path
+#         'check_file' : <check_file>         # Path
+#     }, ...
+# ]
+_SOURCES = None
+
+# Path to the backup directory and destination-check-file
+# {
+#     'path'      : <path_to_destination>, # Path
+#     'check_file': <check_file>           # Path
+# }
+_DESTINATION = None
 
 # Files that must be present in _PATH_SRC / _PATH_DST
 _CHECK_FILE_SRC = None
@@ -43,7 +56,11 @@ _CHECK_FILE_DST = None
 
 _KEEP_N_BACKUPS = 0
 
-_BACKUP_EXCLUDES = []
+# Files and directories to exclude
+# {
+#     <id_1>: [ <path_1>, ... ], ...
+# }
+_BACKUP_EXCLUDES = {}
 
 # Setup logger
 _PATH_LOG_FILES = Path('log-files')
@@ -59,18 +76,22 @@ _LOGGER = logHandler.getSimpleLogger(__name__,
 # @return None
 def process_argparse():
     global _SCRIPT_VERSION
-    global _PATH_SRC
-    global _PATH_DST
-    global _CHECK_FILE_SRC
-    global _CHECK_FILE_DST
+    global _SOURCES
+    global _DESTINATION
     global _KEEP_N_BACKUPS
     global _BACKUP_EXCLUDES
 
-    def check_not_negative(value):
-        ivalue = int(value)
+    def check_not_negative(argument):
+        ivalue = int(argument)
         if ivalue < 0:
-            raise argparse.ArgumentTypeError("%s is an invalid non-negative int value" % value)
+            raise ArgumentTypeError(f'{argument} is an invalid non-negative int value.')
         return ivalue
+    
+    def check_key_value_pair(argument):
+        split = argument.split('#')
+        if not (len(split) == 2 and len(split[0]) > 0 and len(split[1]) > 0):
+            raise ArgumentTypeError(f'{argument} is an invalid key#value pair')
+        return argument
 
     parser = ArgumentParser(description='Create incremental backups.',
                             prog='IncrementalBackup',
@@ -79,7 +100,10 @@ def process_argparse():
     optional_args = parser.add_argument_group('optional arguments')
 
     required_args.add_argument('--src',
-        help='Data directory.',
+        type=check_key_value_pair,
+        nargs='+',
+        metavar='ID#PATH',
+        help='Data directories + identifiers.',
         required=True)
     required_args.add_argument('--dst',
         help='Backup directory.',
@@ -98,8 +122,10 @@ def process_argparse():
         type=check_not_negative,
         help='Number of backups to keep. 0 = no limit. Default is 0.')
     optional_args.add_argument('--exclude',
+        type=check_key_value_pair,
         default=[],
         nargs='+',
+        metavar='ID#PATH',
         help='Paths to exclude from the backup.')
     optional_args.add_argument('--dst_fqdn',
         default='True',
@@ -107,17 +133,27 @@ def process_argparse():
 
     args = parser.parse_args()
 
-    _PATH_SRC = Path(args.src)
-    _PATH_DST = Path(args.dst)
-    
-    if args.dst_fqdn.lower() == 'true':
-        _PATH_DST = _PATH_DST.joinpath(getfqdn())
+    _SOURCES = []
+    for src in args.src:
+        tmp_id = src.split('#')[0]
+        tmp_path = Path(src.split('#')[1])
+        _SOURCES.append({ 'id': tmp_id, 'path': tmp_path, 'check_file': tmp_path.joinpath('.backup_src_check') })
 
-    _CHECK_FILE_SRC = _PATH_SRC.joinpath('.backup_src_check')
-    _CHECK_FILE_DST = _PATH_DST.joinpath('.backup_dst_check')
+    tmp_dst_path = Path(args.dst)
+    if args.dst_fqdn.lower() == 'true':
+        tmp_dst_path = tmp_dst_path.joinpath(getfqdn())
+    _DESTINATION = { 'path': tmp_dst_path, 'check_file': tmp_dst_path.joinpath('.backup_dst_check') }
 
     _KEEP_N_BACKUPS = args.keep
-    _BACKUP_EXCLUDES = args.exclude
+
+    for source in _SOURCES:
+        _BACKUP_EXCLUDES[source['id']] = []
+    for exclude in args.exclude:
+        tmp_id = exclude.split('#')[0]
+        tmp_path = exclude.split('#')[1]
+        if not tmp_id in _BACKUP_EXCLUDES:
+            _BACKUP_EXCLUDES[tmp_id] = []
+        _BACKUP_EXCLUDES[tmp_id].append(tmp_path)
 
 
 # check_requirements
@@ -127,41 +163,41 @@ def process_argparse():
 # @return Bool
 def check_requirements():
     global _LOGGER
-    global _PATH_SRC
-    global _PATH_DST
-    global _CHECK_FILE_SRC
-    global _CHECK_FILE_DST
+    global _SOURCES
+    global _DESTINATION
 
     try:
-        # Check if _PATH_SRC exists
-        _LOGGER.info(f'Checking if data directory exists...')
-        if not (_PATH_SRC.exists() and _PATH_SRC.is_dir()):
-            _LOGGER.error(f'Directory does not exist: "{_PATH_SRC.absolute()}"')
-            raise FileNotFoundError(f'_PATH_SRC ({_PATH_SRC.absolute()}) not found.')
-        else:
-            _LOGGER.info('OK.')
+        # Check if data directories exist
+        for source in _SOURCES:
+            _LOGGER.info(f'Checking if data directory for id "{source["id"]}" exists...')
+            if not (source['path'].exists() and source['path'].is_dir()):
+                _LOGGER.error(f'Directory does not exist: "{source["path"].absolute()}"')
+                raise FileNotFoundError(f'Data directory for id "{source["id"]}" not found: "{source["path"].absolute()}"')
+            else:
+                _LOGGER.info('OK.')
 
-        # Check if _PATH_DST exists
+        # Check if backup directory exists
         _LOGGER.info(f'Checking if backup directory exists...')
-        if not (_PATH_DST.exists() and _PATH_DST.is_dir()):
-            _LOGGER.error(f'Directory does not exist: "{_PATH_DST.absolute()}"')
-            raise FileNotFoundError(f'_PATH_DST ({_PATH_DST.absolute()}) not found.')
+        if not (_DESTINATION['path'].exists() and _DESTINATION['path'].is_dir()):
+            _LOGGER.error(f'Directory does not exist: "{_DESTINATION["path"].absolute()}"')
+            raise FileNotFoundError(f'Backup directory not found: "{_DESTINATION["path"].absolute()}"')
         else:
             _LOGGER.info('OK.')
 
-        # Check if _CHECK_FILE_SRC exists
-        _LOGGER.info(f'Checking if source-check-file exists...')
-        if not (_CHECK_FILE_SRC.exists() and _CHECK_FILE_SRC.is_file()):
-            _LOGGER.error(f'File does not exist: "{_CHECK_FILE_SRC.absolute()}"')
-            raise FileNotFoundError(f'_CHECK_FILE_SRC ({_CHECK_FILE_SRC.absolute()}) not found.')
-        else:
-            _LOGGER.info('OK.')
+        # Check if source-check-files exist
+        for source in _SOURCES:
+            _LOGGER.info(f'Checking if source-check-file for id "{source["id"]}" exists...')
+            if not (source['check_file'].exists() and source['check_file'].is_file()):
+                _LOGGER.error(f'File does not exist: "{source["check_file"].absolute()}"')
+                raise FileNotFoundError(f'Source-check-file for id "{source["id"]}" not found: "{source["check_file"].absolute()}"')
+            else:
+                _LOGGER.info('OK.')
 
-        # Check if _CHECK_FILE_DST exists
+        # Check if destination-check-file exists
         _LOGGER.info(f'Checking if destination-check-file exists...')
-        if not (_CHECK_FILE_DST.exists() and _CHECK_FILE_DST.is_file()):
-            _LOGGER.error(f'File does not exist: "{_CHECK_FILE_DST.absolute()}"')
-            raise FileNotFoundError(f'_CHECK_FILE_DST ({_CHECK_FILE_DST.absolute()}) not found.')
+        if not (_DESTINATION['check_file'].exists() and _DESTINATION['check_file'].is_file()):
+            _LOGGER.error(f'File does not exist: "{_DESTINATION["check_file"].absolute()}"')
+            raise FileNotFoundError(f'Destination-check-file not found: "{_DESTINATION["check_file"].absolute()}"')
         else:
             _LOGGER.info('OK.')
     except FileNotFoundError:
@@ -177,7 +213,7 @@ def check_requirements():
 #
 # @return None
 def prepare_backup():
-    global _PATH_DST
+    global _DESTINATION
     global _KEEP_N_BACKUPS
     global _PATH_LOG_FILES
     global _LOGGER
@@ -187,10 +223,10 @@ def prepare_backup():
         _LOGGER.info(f'Creating log-files directory: "{_PATH_LOG_FILES.absolute()}"')
         _PATH_LOG_FILES.mkdir(parents=True, exist_ok=True)
 
-    backup_to_tmp = _PATH_DST.joinpath('tmp_partial_backup')
+    backup_to_tmp = _DESTINATION['path'].joinpath('tmp_partial_backup')
 
     # Get old backups
-    paths_old_backups = [path for path in _PATH_DST.iterdir() if path.is_dir()]
+    paths_old_backups = [path for path in _DESTINATION['path'].iterdir() if path.is_dir()]
     paths_old_backups = [path for path in paths_old_backups if path.stem not in ['tmp_partial_backup']]
     paths_old_backups.sort()
 
@@ -211,7 +247,7 @@ def prepare_backup():
         if _KEEP_N_BACKUPS > 0 and len(paths_old_backups) == _KEEP_N_BACKUPS:
             backup_to_recycle = min(paths_old_backups)
             _LOGGER.info(f'Recycling old backup: "{backup_to_recycle.absolute()}"')
-            backup_to_recycle.rename(_PATH_DST.joinpath('tmp_partial_backup'))
+            backup_to_recycle.rename(_DESTINATION['path'].joinpath('tmp_partial_backup'))
         else:
             backup_to_tmp.mkdir(parents=True, exist_ok=True)
 
@@ -223,19 +259,19 @@ def prepare_backup():
 # @return None
 def do_backup():
     global _DATETIME_STRING_NOW
-    global _PATH_SRC
-    global _PATH_DST
+    global _SOURCES
+    global _DESTINATION
     global _BACKUP_EXCLUDES
     global _PATH_LOG_FILES
     global _LOGGER
 
-    backup_to_tmp = _PATH_DST.joinpath('tmp_partial_backup')
+    backup_to_tmp = _DESTINATION['path'].joinpath('tmp_partial_backup')
 
-    # Get latest backup for --link-dest
+    # Get path to latest backup for --link-dest (higher-layer)
     path_latest_backup = None
     _LOGGER.info('Looking for latest backup for --link-dest...')
     
-    paths_old_backups = [path for path in _PATH_DST.iterdir() if path.is_dir()]
+    paths_old_backups = [path for path in _DESTINATION['path'].iterdir() if path.is_dir()]
     paths_old_backups = [path for path in paths_old_backups if path.stem not in ['tmp_partial_backup']]
     paths_old_backups.sort()
     if not paths_old_backups == []:
@@ -244,31 +280,32 @@ def do_backup():
     else:
         _LOGGER.info('No backup found.')
 
-    # Path of the new incremental backup
-    path_backup = _PATH_DST.joinpath(_DATETIME_STRING_NOW)
+    # Path of the new incremental backup (higher-layer)
+    path_backup = _DESTINATION['path'].joinpath(_DATETIME_STRING_NOW)
     _LOGGER.info(f'Backup will be done to "{path_backup.absolute()}"')
     
-    # Create link-dest string
-    rsync_cmd_arg_linkDest = ' '
-    if not path_latest_backup is None:
-        rsync_cmd_arg_linkDest = f'--link-dest "../{path_latest_backup.stem}" '
+    for source in _SOURCES:
+        # Create link-dest string
+        rsync_cmd_arg_linkDest = ' '
+        if not path_latest_backup is None:
+            rsync_cmd_arg_linkDest = f'--link-dest "../../{path_latest_backup.stem}/{source["id"]}" '
 
-    # Create exclude string
-    rsync_cmd_arg_exclude = ' '
-    if len(_BACKUP_EXCLUDES) > 0:
-        tmp_string_list = ','.join('"' + item + '"' for item in _BACKUP_EXCLUDES)
-        rsync_cmd_arg_exclude = f'--exclude={{{tmp_string_list}}} '
-    
-    # Create log-file string
-    rsync_cmd_arg_log_file = f'--log-file "{_PATH_LOG_FILES.absolute()}/{_DATETIME_STRING_NOW}_rsync.log" '
+        # Create exclude string
+        rsync_cmd_arg_exclude = ' '
+        if len(_BACKUP_EXCLUDES[source['id']]) > 0:
+            tmp_string_list = ','.join('"' + item + '"' for item in _BACKUP_EXCLUDES[source['id']])
+            rsync_cmd_arg_exclude = f'--exclude={{{tmp_string_list}}} '
+        
+        # Create log-file string
+        rsync_cmd_arg_log_file = f'--log-file "{_PATH_LOG_FILES.absolute()}/{_DATETIME_STRING_NOW}_{source["id"]}_rsync.log" '
 
-    rsync_cmd = f'rsync -a --delete {rsync_cmd_arg_exclude}{rsync_cmd_arg_linkDest}"{_PATH_SRC.absolute()}/" "{backup_to_tmp}"'
-    rsync_cmd += f' {rsync_cmd_arg_log_file}'
+        rsync_cmd = f'rsync -a --delete {rsync_cmd_arg_exclude}{rsync_cmd_arg_linkDest}"{source["path"].absolute()}/" "{backup_to_tmp.joinpath(source["id"])}"'
+        rsync_cmd += f' {rsync_cmd_arg_log_file}'
 
-    _LOGGER.info('Executing the following command:')
-    _LOGGER.info(f'{rsync_cmd}')
+        _LOGGER.info('Executing the following command:')
+        _LOGGER.info(f'{rsync_cmd}')
 
-    run(rsync_cmd, shell=True)
+        run(rsync_cmd, shell=True)
 
     _LOGGER.info(f'Renaming tmp_partial_backup folder to "{path_backup.stem}".')
     backup_to_tmp.rename(path_backup)
