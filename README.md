@@ -4,13 +4,13 @@
 
 IncrementalBackup is a simple to use rsync wrapper for creating incremental
 backups. It allows multiple source directories to be backuped at once and
-provides multiple tests to ensure a safe backup procedure
+provides multiple tests to ensure a safe backup procedure.
 
 IncrementalBackup will check the existance of the source- and destination
 directories, as well as check-files that ensure that a backup from / to the
-specified directory is intended. This is especially useful if the backup is done
-to an external hard drive. If it is not connected, no backup will be done and
-rsync will not be executed.
+specified directory is intended and possible. This is especially useful if the
+backup is done to an external hard drive. If it is not connected, no backup will
+be done and rsync will not be executed.
 
 If the maximum number of backups at the destination location is reached
 (if specified; see `--keep`), the oldest backup will be recycled to reduce the
@@ -49,6 +49,10 @@ optional arguments:
 Use `--src` and `--dst` to specify the paths to the data *(source)* and
 backup *(destination)* directories.
 
+```
+python3 IncrementalBackup.py --scr /data --dst /backup
+```
+
 You can also specify more than one source directory. In this case a unique id
 must be assigned to each source in the format `<id>#<path>`:
 
@@ -59,7 +63,7 @@ python3 IncrementalBackup.py --scr DATA#/data WWW#/var/www --dst /backup
 You can also assign an id to the source if you are only using one source
 directoy. This is not required, however.
 
-#### (Don't) save backup to FQDN subfolder
+#### (Don't) save backup to FQDN subfolder (optional)
 
 You may have noticed, that the backup will be saved to a subfolder of `--dst` 
 named by the fully-qualified-domain-name of the computer. This feature is
@@ -72,7 +76,7 @@ You can disable this feature by specifying `--dst_fqdn`:
 python3 IncrementalBackup.py --src /data --dst /backup --dst_fqdn False
 ```
 
-#### Exclude files and direcories from the backup
+#### Exclude files and direcories from the backup (optional)
 
 Use `--exclude` to exclude one or multiple files and / or directories from the
 backup:
@@ -81,14 +85,16 @@ backup:
 python3 IncrementalBackup.py --src /data --dst /backup --exclude /data/exclude_me/ /data/me_too.md
 ```
 
-You can assign the id of the source to the exclude paths. **This is required
-if the source was assigned an id.** Again: use the format `<id>#<PATH>`:
+**If the source was assigned an id, the id must be forwarded to the
+exclude-paths:**
+
+Again: use the format `<id>#<PATH>`:
 
 ```
 python3 IncrementalBackup.py --src DATA#/data WWW#/var/www --dst /backup --exclude DATA#/data/exclude_me/ WWW#/var/www/me_too.md
 ```
 
-#### Limit number of backups
+#### Limit number of backups (optional)
 
 You can also limit the number of backups saved at the destination by specifying
 `--keep`:
@@ -97,8 +103,8 @@ You can also limit the number of backups saved at the destination by specifying
 python3 IncrementalBackup.py --src /data --dst /backup --keep 5
 ```
 
-This will delete all but the latest 5 backups. The fifth-latest backup will be
-recycled; the execution time can be drastically reduced.
+**This will delete all but the latest 5 backups.** The fifth-latest backup will
+be recycled; the execution time can be drastically reduced.
 
 
 
