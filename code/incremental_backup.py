@@ -17,6 +17,7 @@
 #   -> pass log-filename
 #   -> overwrite / append
 # - def send log files on error
+# - gleichzeitige ausführung verhindern(?)
 
 import logHandler
 
@@ -42,6 +43,9 @@ _DATETIME_STRING_NOW = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
 #     }, ...
 # ]
 _SOURCES = None
+
+# Default source id when using only once source and not assigning an id
+_SOURCE_ID_NONE = '#NO_SOURCE_ID_SPECIFIED#'
 
 # Path to the backup directory and destination-check-file
 # {
@@ -77,6 +81,7 @@ _LOGGER = logHandler.getSimpleLogger(__name__,
 def process_argparse():
     global _SCRIPT_VERSION
     global _SOURCES
+    global _SOURCE_ID_NONE
     global _DESTINATION
     global _KEEP_N_BACKUPS
     global _BACKUP_EXCLUDES
@@ -100,9 +105,8 @@ def process_argparse():
     optional_args = parser.add_argument_group('optional arguments')
 
     required_args.add_argument('--src',
-        type=check_key_value_pair,
         nargs='+',
-        metavar='ID#PATH',
+        metavar='PATH|ID#PATH',
         help='Data directories + identifiers.',
         required=True)
     required_args.add_argument('--dst',
@@ -122,10 +126,9 @@ def process_argparse():
         type=check_not_negative,
         help='Number of backups to keep. 0 = no limit. Default is 0.')
     optional_args.add_argument('--exclude',
-        type=check_key_value_pair,
         default=[],
         nargs='+',
-        metavar='ID#PATH',
+        metavar='PATH|ID#PATH',
         help='Paths to exclude from the backup.')
     optional_args.add_argument('--dst_fqdn',
         default='True',
@@ -134,10 +137,27 @@ def process_argparse():
     args = parser.parse_args()
 
     _SOURCES = []
-    for src in args.src:
-        tmp_id = src.split('#')[0]
-        tmp_path = Path(src.split('#')[1])
+    if len(args.src) == 1:
+        # only one source
+        tmp_id = None
+        tmp_path = None
+
+        src = args.src[0]
+        if '#' in src:
+            check_key_value_pair(src)
+            tmp_id = src.split('#')[0]
+            tmp_path = Path(src.split('#')[1])
+        else:
+            tmp_id = _SOURCE_ID_NONE
+            tmp_path = Path(src)
         _SOURCES.append({ 'id': tmp_id, 'path': tmp_path, 'check_file': tmp_path.joinpath('.backup_src_check') })
+    else:
+        # multiple sources
+        for src in args.src:
+            check_key_value_pair(src)
+            tmp_id = src.split('#')[0]
+            tmp_path = Path(src.split('#')[1])
+            _SOURCES.append({ 'id': tmp_id, 'path': tmp_path, 'check_file': tmp_path.joinpath('.backup_src_check') })
 
     tmp_dst_path = Path(args.dst)
     if args.dst_fqdn.lower() == 'true':
@@ -149,11 +169,21 @@ def process_argparse():
     for source in _SOURCES:
         _BACKUP_EXCLUDES[source['id']] = []
     for exclude in args.exclude:
-        tmp_id = exclude.split('#')[0]
-        tmp_path = exclude.split('#')[1]
-        if not tmp_id in _BACKUP_EXCLUDES:
-            _BACKUP_EXCLUDES[tmp_id] = []
-        _BACKUP_EXCLUDES[tmp_id].append(tmp_path)
+        if '#' in exclude:
+            check_key_value_pair(exclude)
+            tmp_id = exclude.split('#')[0]
+            tmp_path = exclude.split('#')[1]
+            if not tmp_id in [source['id'] for source in _SOURCES]:
+                raise ArgumentTypeError(f'Id "{tmp_id}" was not assigned to any source. Check --exclude.')
+            _BACKUP_EXCLUDES[tmp_id].append(tmp_path)
+        else:
+            tmp_id = _SOURCE_ID_NONE
+            tmp_path = exclude
+            if len(_SOURCES) > 1:
+                raise ArgumentTypeError(f'Exclude-path cannot be associated with any source. Assigning an id to the exclude-path is required when using multiple sources.')
+            if not _SOURCES[0]['id'] == _SOURCE_ID_NONE:
+                raise ArgumentTypeError(f'Please assign an ID to the exclude path.')
+            _BACKUP_EXCLUDES[tmp_id].append(tmp_path)
 
 
 # check_requirements
@@ -260,6 +290,7 @@ def prepare_backup():
 def do_backup():
     global _DATETIME_STRING_NOW
     global _SOURCES
+    global _SOURCE_ID_NONE
     global _DESTINATION
     global _BACKUP_EXCLUDES
     global _PATH_LOG_FILES
@@ -282,13 +313,16 @@ def do_backup():
 
     # Path of the new incremental backup (higher-layer)
     path_backup = _DESTINATION['path'].joinpath(_DATETIME_STRING_NOW)
-    _LOGGER.info(f'Backup will be done to "{path_backup.absolute()}"')
+    _LOGGER.info(f'Backup will be created on "{path_backup.absolute()}"')
     
     for source in _SOURCES:
         # Create link-dest string
         rsync_cmd_arg_linkDest = ' '
         if not path_latest_backup is None:
-            rsync_cmd_arg_linkDest = f'--link-dest "../../{path_latest_backup.stem}/{source["id"]}" '
+            if source['id'] == _SOURCE_ID_NONE:
+                rsync_cmd_arg_linkDest = f'--link-dest "../{path_latest_backup.stem}" '
+            else:
+                rsync_cmd_arg_linkDest = f'--link-dest "../../{path_latest_backup.stem}/{source["id"]}" '
 
         # Create exclude string
         rsync_cmd_arg_exclude = ' '
@@ -299,7 +333,13 @@ def do_backup():
         # Create log-file string
         rsync_cmd_arg_log_file = f'--log-file "{_PATH_LOG_FILES.absolute()}/{_DATETIME_STRING_NOW}_{source["id"]}_rsync.log" '
 
-        rsync_cmd = f'rsync -a --delete {rsync_cmd_arg_exclude}{rsync_cmd_arg_linkDest}"{source["path"].absolute()}/" "{backup_to_tmp.joinpath(source["id"])}"'
+        # Create dst-path string
+        tmp_dst = backup_to_tmp
+        if not source['id'] == _SOURCE_ID_NONE:
+            tmp_dst = tmp_dst.joinpath(source['id'])
+        rsync_dst = tmp_dst.absolute()
+
+        rsync_cmd = f'rsync -a --delete {rsync_cmd_arg_exclude}{rsync_cmd_arg_linkDest}"{source["path"].absolute()}/" "{rsync_dst}"'
         rsync_cmd += f' {rsync_cmd_arg_log_file}'
 
         _LOGGER.info('Executing the following command:')
