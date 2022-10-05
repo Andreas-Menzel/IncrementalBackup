@@ -13,7 +13,6 @@
 #-------------------------------------------------------------------------------
 # TODO
 # - Exception Handling rsync
-# - Über Python-Skript aufrufbar machen
 # - Argparse: schöner machen + Beispiele
 #   -> README.md aktualisieren
 # - Eigenen logHandler implementieren
@@ -73,11 +72,8 @@ _SCRIPT_VERSION = '1.0.0'
 #
 # @return <err_code>, <sources>, <destination>, <keep_n_backups>, <backup_excludes>
 #
-# @note See comments at the top of this file for more information on the
-#           structure of the variables.
-#
 # TODO: log error and return err_code instead of raise
-def _process_argparse(source_id_none):
+def _process_argparse(source_id_none = '#DEFAULT_SOURCE_ID#'):
     global _SCRIPT_VERSION
 
     def check_not_negative(argument):
@@ -85,12 +81,6 @@ def _process_argparse(source_id_none):
         if ivalue < 0:
             raise ArgumentTypeError(f'{argument} is an invalid non-negative int value.')
         return ivalue
-    
-    def check_key_value_pair(argument):
-        split = argument.split('#')
-        if not (len(split) == 2 and len(split[0]) > 0 and len(split[1]) > 0):
-            raise ArgumentTypeError(f'{argument} is an invalid key#value pair')
-        return argument
 
     parser = ArgumentParser(description='Create incremental backups.',
                             prog='IncrementalBackup',
@@ -130,13 +120,46 @@ def _process_argparse(source_id_none):
 
     args = parser.parse_args()
 
+    if args.dst_fqdn.lower() == 'true':
+        args.dst_fqdn = True
+    else:
+        args.dst_fqdn = False
+    
+    return process_arguments(args.src, args.dst, args.keep, args.exclude, args.dst_fqdn, source_id_none)
+
+
+# process_arguments
+#
+# Checks if the given arguments are valid and returns the processed variables.
+#
+# @param str | [str]    _src
+# @param str            _dst
+# @param int            _keep
+# @param [str]          _exclude
+# @param bool           _dst_fqdn
+# @param str            source_id_none
+#
+# @return <err_code>, <sources>, <destination>, <keep_n_backups>, <backup_excludes>
+#
+# @note See comments at the top of this file for more information on the
+#           structure of the variables.
+#
+# TODO: return err_code instead of raise
+def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, source_id_none = '#DEFAULT_SOURCE_ID#'):
+    def check_key_value_pair(argument):
+        split = argument.split('#')
+        if not (len(split) == 2 and len(split[0]) > 0 and len(split[1]) > 0):
+            raise ArgumentTypeError(f'{argument} is an invalid key#value pair')
+        return argument
+    
+    # sources
     sources = []
-    if len(args.src) == 1:
+    if len(_src) == 1:
         # only one source
         tmp_id = None
         tmp_path = None
 
-        src = args.src[0]
+        src = _src[0]
         if '#' in src:
             check_key_value_pair(src)
             tmp_id = src.split('#')[0]
@@ -147,23 +170,26 @@ def _process_argparse(source_id_none):
         sources.append({ 'id': tmp_id, 'path': tmp_path, 'check_file': tmp_path.joinpath('.backup_src_check') })
     else:
         # multiple sources
-        for src in args.src:
+        for src in _src:
             check_key_value_pair(src)
             tmp_id = src.split('#')[0]
             tmp_path = Path(src.split('#')[1])
             sources.append({ 'id': tmp_id, 'path': tmp_path, 'check_file': tmp_path.joinpath('.backup_src_check') })
-
-    tmp_dst_path = Path(args.dst)
-    if args.dst_fqdn.lower() == 'true':
+    
+    # destination
+    tmp_dst_path = Path(_dst)
+    if _dst_fqdn:
         tmp_dst_path = tmp_dst_path.joinpath(getfqdn())
     destination = { 'path': tmp_dst_path, 'check_file': tmp_dst_path.joinpath('.backup_dst_check') }
-
-    keep_n_backups = args.keep
-
+    
+    # keep_n_backups
+    keep_n_backups = _keep
+    
+    # backup_excludes
     backup_excludes = {}
     for source in sources:
         backup_excludes[source['id']] = []
-    for exclude in args.exclude:
+    for exclude in _exclude:
         if '#' in exclude:
             check_key_value_pair(exclude)
             tmp_id = exclude.split('#')[0]
@@ -179,7 +205,7 @@ def _process_argparse(source_id_none):
             if not sources[0]['id'] == source_id_none:
                 raise ArgumentTypeError(f'Please assign an ID to the exclude path.')
             backup_excludes[tmp_id].append(tmp_path)
-
+    
     return (0, sources, destination, keep_n_backups, backup_excludes)
 
 
@@ -380,23 +406,46 @@ def _do_backup(sources, source_id_none, destination, backup_excludes,
 #
 # Start a backup.
 #
+# @param dict   arguments
+# @param Path   path_log_files
+# @param        logger
+#
 # @return <err_code>
 #
 # @note err_code 0: OK
 # @note err_code 1: An error occured
-def backup(arguments = None):
+def backup(arguments = None, path_log_files = None, logger = None):
     datetime_string_now = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
 
-    path_log_files = Path('log-files')
-    logger = logHandler.getSimpleLogger(__name__,
-                                         streamLogLevel=logHandler.DEBUG,
-                                         fileLogLevel=logHandler.DEBUG)
+    if path_log_files is None:
+        path_log_files = Path('log-files')
+
+    if logger is None:
+        logger = logHandler.getSimpleLogger(__name__,
+                                            streamLogLevel=logHandler.DEBUG,
+                                            fileLogLevel=logHandler.DEBUG)
 
     logger.info(f'IncrementalBackup started at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
     
     try:
-        # Process argparse
-        err_code, sources, destination, keep_n_backups, backup_excludes = _process_argparse('#NO_SOURCE_ID_SPECIFIED#')
+        # Process arguments
+        err_code = None
+        sources = None
+        destination = None
+        keep_n_backups = None
+        backup_excludes = None
+
+        if arguments is None:
+            err_code, sources, destination, keep_n_backups, backup_excludes = _process_argparse('#NO_SOURCE_ID_SPECIFIED#')
+        else:
+            _src = arguments['src']
+            _dst = arguments['dst']
+            _keep = arguments['keep']
+            _exclude = arguments['exclude']
+            _dst_fqdn = arguments['dst_fqdn']
+            err_code, sources, destination, keep_n_backups, backup_excludes = _process_arguments(_src, _dst, _keep,
+                                                                                                 _exclude, _dst_fqdn,
+                                                                                                 '#NO_SOURCE_ID_SPECIFIED#')
         if err_code != 0:
             raise Exception()
         
@@ -404,12 +453,12 @@ def backup(arguments = None):
         err_code = _check_requirements(sources, destination, logger)
         if err_code != 0:
             raise Exception()
-
+        
         # Prepare backup
         err_code = _prepare_backup(destination, keep_n_backups, path_log_files, logger)
         if err_code != 0:
             raise Exception()
-
+        
         # Do backup
         err_code = _do_backup(sources, '#NO_SOURCE_ID_SPECIFIED#', destination, backup_excludes, datetime_string_now, path_log_files, logger)
         if err_code != 0:
