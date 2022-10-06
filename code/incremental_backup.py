@@ -379,7 +379,11 @@ def _do_backup(sources, source_id_none, destination, backup_excludes,
             rsync_cmd_arg_exclude = f'--exclude={{{tmp_string_list}}} '
         
         # Create log-file string
-        tmp_logfile_filename = f'{datetime_string_now}_{source["id"]}_rsync.log'
+        tmp_logfile_filename = ''
+        if not source['id'] == source_id_none:
+            tmp_logfile_filename = f'{datetime_string_now}_{source["id"]}_rsync.log'
+        else:
+            tmp_logfile_filename = f'{datetime_string_now}_rsync.log'
         rsync_cmd_arg_log_file = f'--log-file "{path_log_files.joinpath(tmp_logfile_filename).absolute()}" '
 
         # Create dst-path string
@@ -419,11 +423,16 @@ def backup(arguments = None, path_log_files = None, logger = None):
 
     if path_log_files is None:
         path_log_files = Path('log-files')
+    if not path_log_files.exists():
+        path_log_files.mkdir(parents=True)
 
     if logger is None:
-        logger = logHandler.getSimpleLogger(__name__,
-                                            streamLogLevel=logHandler.DEBUG,
-                                            fileLogLevel=logHandler.DEBUG)
+        logger = logHandler.get_logger(name=__name__,
+                                        stream_logger={ 'log_level': logHandler.DEBUG, 'stream': None },
+                                        file_logger={ 'log_level': logHandler.DEBUG,
+                                                      'filename': path_log_files.joinpath(f'{datetime_string_now}_incremental_backup.log').absolute(),
+                                                      'write_mode': 'a' },
+                                        mode=None)
 
     logger.info(f'IncrementalBackup started at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
     
