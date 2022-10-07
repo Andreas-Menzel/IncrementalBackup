@@ -24,22 +24,49 @@ message / parameter list.
 ### Parameters
 
 ```
-usage: IncrementalBackup --src ID#PATH [ID#PATH ...] --dst DST [-h] [--version] [--keep KEEP] [--exclude ID#PATH [ID#PATH ...]] [--dst_fqdn DST_FQDN]
+usage: IncrementalBackup.py --src <path>|<id>#<path> [<path>|<id>#<path> ...] --dst <path> [-h] [--version] [--keep <pos_num>] [--exclude <path>|<id>#<path> [<path>|<id>#<path> ...]]
+                            [--dst_fqdn True|False]
 
-Create incremental backups.
+IncrementalBackup.py is a wrapper for rsync and provides an easy interface for a safe and efficient backup process.
+
+The script will perform the following checks before executing rsync:
+- Do the source- and destination- directories exist?
+- Do the source- and destination- check-files exist? (to ensure that the provided paths are correct)
+
+IncrementalBackup.py will execute rsync with the --link-dest argument to create hard-links for files that did not change.
+When using the --keep option, IncrementalBackup.py will also recycle old backups to reduce the runtime.
+
+Have a look at the README.md file and the Github repository for more information.
+https://github.com/Andreas-Menzel/IncrementalBackup
+    
 
 required arguments:
-  --src ID#PATH [ID#PATH ...]
-                        Data directories + identifiers.
-  --dst DST             Backup directory.
+  --src <path>|<id>#<path> [<path>|<id>#<path> ...]
+                        Data directories (+ identifiers).
+  --dst <path>          Backup directory.
 
 optional arguments:
-  -h, --help            show this help message and exit
-  --version             show program's version number and exit
-  --keep KEEP           Number of backups to keep. 0 = no limit. Default is 0.
-  --exclude ID#PATH [ID#PATH ...]
-                        Paths to exclude from the backup.
-  --dst_fqdn DST_FQDN   Add fully qualified domain name to the backup path. Default is True.
+  -h, --help            Show this help message and exit
+  --version             Show the program's version number and exit
+  --keep <pos_num>      Number of backups to keep. 0 = no limit (default). NOTE: THIS WILL DELETE ALL BUT THE LAST <pos_num> BACKUPS!
+  --exclude <path>|<id>#<path> [<path>|<id>#<path> ...]
+                        Paths (+ source identifiers) to exclude from the backup.
+  --dst_fqdn True|False
+                        Add fully qualified domain name to the backup path. Default is True.
+
+Examples:
+
+    Basic backup:
+        python3 IncrementalBackup.py --scr /data --dst /backup
+    
+    ... with excludes:
+        python3 IncrementalBackup.py --src /data --dst /backup --exclude /data/exclude_me/ /data/me_too.md
+
+    Backup multiple sources:
+        python3 IncrementalBackup.py --scr DATA#/data WWW#/var/www --dst /backup
+
+    ... with excludes:
+        python3 IncrementalBackup.py --src DATA#/data WWW#/var/www --dst /backup --exclude DATA#/data/exclude_me/ WWW#/var/www/me_too.md
 ```
 
 ### Explanation

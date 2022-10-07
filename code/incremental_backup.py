@@ -13,19 +13,13 @@
 #-------------------------------------------------------------------------------
 # TODO
 # - Exception Handling rsync
-# - Argparse: schöner machen + Beispiele
-#   -> README.md aktualisieren
-# - Eigenen logHandler implementieren
-#   -> Log-Dateiname angeben
-#   -> overwrite / append
 #
 # - def send log files on error
-# - gleichzeitige ausführung verhindern(?)
 # - --restore
 
 import logHandler
 
-from argparse import ArgumentParser, ArgumentTypeError, SUPPRESS
+from argparse import ArgumentParser, ArgumentTypeError, SUPPRESS, RawDescriptionHelpFormatter
 from datetime import datetime
 from pathlib import Path
 from shutil import rmtree
@@ -81,19 +75,51 @@ def _process_argparse(source_id_none = '#DEFAULT_SOURCE_ID#'):
         if ivalue < 0:
             raise ArgumentTypeError(f'{argument} is an invalid non-negative int value.')
         return ivalue
+    
+    parser_description = '''
+%(prog)s is a wrapper for rsync and provides an easy interface for a safe and efficient backup process.
 
-    parser = ArgumentParser(description='Create incremental backups.',
-                            prog='IncrementalBackup',
-                            add_help=False)
+The script will perform the following checks before executing rsync:
+- Do the source- and destination- directories exist?
+- Do the source- and destination- check-files exist? (to ensure that the provided paths are correct)
+
+%(prog)s will execute rsync with the --link-dest argument to create hard-links for files that did not change.
+When using the --keep option, %(prog)s will also recycle old backups to reduce the runtime.
+
+Have a look at the README.md file and the Github repository for more information.
+https://github.com/Andreas-Menzel/IncrementalBackup
+    '''
+    
+    parser_epilog = '''
+Examples:
+
+    Basic backup:
+        python3 %(prog)s --scr /data --dst /backup
+    
+    ... with excludes:
+        python3 %(prog)s --src /data --dst /backup --exclude /data/exclude_me/ /data/me_too.md
+
+    Backup multiple sources:
+        python3 %(prog)s --scr DATA#/data WWW#/var/www --dst /backup
+
+    ... with excludes:
+        python3 %(prog)s --src DATA#/data WWW#/var/www --dst /backup --exclude DATA#/data/exclude_me/ WWW#/var/www/me_too.md        
+    '''
+    parser = ArgumentParser(description=parser_description,
+                            prog='IncrementalBackup.py',
+                            add_help=False,
+                            epilog=parser_epilog,
+                            formatter_class=RawDescriptionHelpFormatter)
     required_args = parser.add_argument_group('required arguments')
     optional_args = parser.add_argument_group('optional arguments')
 
     required_args.add_argument('--src',
         nargs='+',
-        metavar='PATH|ID#PATH',
-        help='Data directories + identifiers.',
+        metavar='<path>|<id>#<path>',
+        help='Data directories (+ identifiers).',
         required=True)
     required_args.add_argument('--dst',
+        metavar='<path>',
         help='Backup directory.',
         required=True)
 
@@ -101,20 +127,23 @@ def _process_argparse(source_id_none = '#DEFAULT_SOURCE_ID#'):
         '--help',
         action='help',
         default=SUPPRESS,
-        help='show this help message and exit')
+        help='Show this help message and exit')
     optional_args.add_argument('--version',
         action='version',
-        version=f'%(prog)s {_SCRIPT_VERSION}')
+        version=f'%(prog)s {_SCRIPT_VERSION}',
+        help='Show the program\'s version number and exit')
     optional_args.add_argument('--keep',
+        metavar='<pos_num>',
         default=0,
         type=check_not_negative,
-        help='Number of backups to keep. 0 = no limit. Default is 0.')
+        help='Number of backups to keep. 0 = no limit (default). NOTE: THIS WILL DELETE ALL BUT THE LAST <pos_num> BACKUPS!')
     optional_args.add_argument('--exclude',
+        metavar='<path>|<id>#<path>',
         default=[],
         nargs='+',
-        metavar='PATH|ID#PATH',
-        help='Paths to exclude from the backup.')
+        help='Paths (+ source identifiers) to exclude from the backup.')
     optional_args.add_argument('--dst_fqdn',
+        metavar='True|False',
         default='True',
         help='Add fully qualified domain name to the backup path. Default is True.')
 
