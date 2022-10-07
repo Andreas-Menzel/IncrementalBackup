@@ -135,6 +135,12 @@ be recycled; the execution time can be drastically reduced.
 
 
 
-## Used modules
+# Limitations
 
-For logging I use tizianerlenbergs [logHandler.py](https://github.com/tizianerlenberg/multiSSH/blob/6f48a3a5d0542fcb61682b9cb835b769b60e406b/logHandler.py) from his [multiSSH](https://github.com/tizianerlenberg/multiSSH) repository.
+I know of the following limitations with this project. Please open an issue if
+you find anything else. I will then fix the bug or at least add it to this
+section.
+
+- **Characters used in \<id\> and \<path\>**
+
+  At the moment the \<id\> and the \<path\> must not contain the **"#"** character!
