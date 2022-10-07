@@ -15,7 +15,6 @@
 # - Exception Handling rsync
 #
 # - def send log files on error
-# - --restore
 
 import logHandler
 
@@ -66,7 +65,7 @@ _SCRIPT_VERSION = '1.0.0'
 #
 # @return <err_code>, <sources>, <destination>, <keep_n_backups>, <backup_excludes>
 #
-# TODO: log error and return err_code instead of raise
+# TODO: log error and return err_code (1x) instead of raise
 def _process_argparse(source_id_none = '#DEFAULT_SOURCE_ID#'):
     global _SCRIPT_VERSION
 
@@ -173,7 +172,7 @@ Examples:
 # @note See comments at the top of this file for more information on the
 #           structure of the variables.
 #
-# TODO: return err_code instead of raise
+# TODO: return err_code (2x) instead of raise
 def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, source_id_none = '#DEFAULT_SOURCE_ID#'):
     def check_key_value_pair(argument):
         split = argument.split('#')
@@ -249,10 +248,10 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, source_id_none = '
 # @return <err_code>
 #
 # @note err_code 0: OK
-# @note err_code 1: one or more data directories not found
-# @note err_code 2: backup directory not found
-# @note err_code 3: one or more source-check-files not found
-# @note err_code 4: destination-check-file not found
+# @note err_code 31: one or more data directories not found
+# @note err_code 32: backup directory not found
+# @note err_code 33: one or more source-check-files not found
+# @note err_code 34: destination-check-file not found
 def _check_requirements(sources, destination, logger):
     err_code = 0
     
@@ -262,7 +261,7 @@ def _check_requirements(sources, destination, logger):
             logger.info(f'Checking if data directory for id "{source["id"]}" exists...')
             if not (source['path'].exists() and source['path'].is_dir()):
                 logger.error(f'Directory does not exist: "{source["path"].absolute()}"')
-                err_code = 1
+                err_code = 31
                 raise FileNotFoundError()
             else:
                 logger.info('OK.')
@@ -271,7 +270,7 @@ def _check_requirements(sources, destination, logger):
         logger.info(f'Checking if backup directory exists...')
         if not (destination['path'].exists() and destination['path'].is_dir()):
             logger.error(f'Directory does not exist: "{destination["path"].absolute()}"')
-            err_code = 2
+            err_code = 32
             raise FileNotFoundError()
         else:
             logger.info('OK.')
@@ -281,7 +280,7 @@ def _check_requirements(sources, destination, logger):
             logger.info(f'Checking if source-check-file for id "{source["id"]}" exists...')
             if not (source['check_file'].exists() and source['check_file'].is_file()):
                 logger.error(f'File does not exist: "{source["check_file"].absolute()}"')
-                err_code = 3
+                err_code = 33
                 raise FileNotFoundError()
             else:
                 logger.info('OK.')
@@ -290,7 +289,7 @@ def _check_requirements(sources, destination, logger):
         logger.info(f'Checking if destination-check-file exists...')
         if not (destination['check_file'].exists() and destination['check_file'].is_file()):
             logger.error(f'File does not exist: "{destination["check_file"].absolute()}"')
-            err_code = 4
+            err_code = 34
             raise FileNotFoundError()
         else:
             logger.info('OK.')
@@ -313,6 +312,8 @@ def _check_requirements(sources, destination, logger):
 # @return <err_code>
 #
 # @note err_code 0: OK
+#
+# TODO: err_code (4x)
 def _prepare_backup(destination, keep_n_backups, path_log_files, logger):
     # Create log-files directory
     if not path_log_files.exists():
@@ -363,6 +364,8 @@ def _prepare_backup(destination, keep_n_backups, path_log_files, logger):
 # @param        logger
 #
 # @return <err_code>
+#
+# err_code (5x)
 def _do_backup(sources, source_id_none, destination, backup_excludes,
               datetime_string_now, path_log_files, logger):
     backup_to_tmp = destination['path'].joinpath('tmp_partial_backup')
@@ -446,7 +449,20 @@ def _do_backup(sources, source_id_none, destination, backup_excludes,
 # @return <err_code>
 #
 # @note err_code 0: OK
-# @note err_code 1: An error occured
+#
+# @note err_code 1x: function _process_argparse()
+#
+# @note err_code 2x: function _process_arguments()
+#
+# @note err_code 3x: function _check_requirements()
+# @note err_code 31: one or more data directories not found
+# @note err_code 32: backup directory not found
+# @note err_code 33: one or more source-check-files not found
+# @note err_code 34: destination-check-file not found
+#
+# @note err_code 4x: function _prepare_backup()
+#
+# @note err_code 5x: function _do_backup()
 def backup(arguments = None, path_log_files = None, logger = None):
     datetime_string_now = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
 
@@ -465,6 +481,7 @@ def backup(arguments = None, path_log_files = None, logger = None):
 
     logger.info(f'IncrementalBackup started at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
     
+    return_code = 0
     try:
         # Process arguments
         err_code = None
@@ -485,28 +502,34 @@ def backup(arguments = None, path_log_files = None, logger = None):
                                                                                                  _exclude, _dst_fqdn,
                                                                                                  '#NO_SOURCE_ID_SPECIFIED#')
         if err_code != 0:
+            return_code = err_code
             raise Exception()
         
         # Check requirements
         err_code = _check_requirements(sources, destination, logger)
         if err_code != 0:
+            return_code = err_code
             raise Exception()
         
         # Prepare backup
         err_code = _prepare_backup(destination, keep_n_backups, path_log_files, logger)
         if err_code != 0:
+            return_code = err_code
             raise Exception()
         
         # Do backup
         err_code = _do_backup(sources, '#NO_SOURCE_ID_SPECIFIED#', destination, backup_excludes, datetime_string_now, path_log_files, logger)
         if err_code != 0:
+            return_code = err_code
             raise Exception()
     except Exception:
-        logger.error(f'An error occured. Terminating backup process at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}.')
-        return 1
+        logger.critical(f'An error occured. Terminating backup process at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}.')
 
     logger.info(f'IncrementalBackup finished at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
 
+    return return_code
+
 
 if __name__ == '__main__':
-    backup()
+    return_code = backup()
+    exit(return_code)
