@@ -15,6 +15,9 @@
 # - Exception Handling rsync
 #
 # - def send log files on error
+#
+# Evtl. Probleme:
+# - Log-Datei nicht im richtigen Ordner
 
 import logHandler
 
@@ -63,7 +66,7 @@ _SCRIPT_VERSION = '1.0.0'
 #
 # @param str    source_id_none
 #
-# @return <err_code>, <sources>, <destination>, <keep_n_backups>, <backup_excludes>
+# @return <err_code>, <sources>, <destination>, <keep_n_backups>, <backup_excludes>, <_path_log_summary>
 #
 # TODO: log error and return err_code (1x) instead of raise
 def _process_argparse(source_id_none = '#DEFAULT_SOURCE_ID#'):
@@ -145,6 +148,14 @@ Examples:
         metavar='True|False',
         default='True',
         help='Add fully qualified domain name to the backup path. Default is True.')
+    optional_args.add_argument('--path_log_files',
+        metavar='<path>',
+        default='log-files',
+        help='Path to the directory containing the log-files.')
+    optional_args.add_argument('--log_summary',
+        metavar='<path2>',
+        default=None,
+        help='Path to a file where the log-files will be listed.')
 
     args = parser.parse_args()
 
@@ -153,7 +164,7 @@ Examples:
     else:
         args.dst_fqdn = False
     
-    return process_arguments(args.src, args.dst, args.keep, args.exclude, args.dst_fqdn, source_id_none)
+    return process_arguments(args.src, args.dst, args.keep, args.exclude, args.dst_fqdn, args.path_log_files, args.log_summary, source_id_none)
 
 
 # process_arguments
@@ -165,15 +176,17 @@ Examples:
 # @param int            _keep
 # @param [str]          _exclude
 # @param bool           _dst_fqdn
+# @param str            _path_log_files
+# @param str            _path_log_summary
 # @param str            source_id_none
 #
-# @return <err_code>, <sources>, <destination>, <keep_n_backups>, <backup_excludes>
+# @return <err_code>, <sources>, <destination>, <keep_n_backups>, <backup_excludes>, <path_log_files>, <path_log_summary>
 #
 # @note See comments at the top of this file for more information on the
 #           structure of the variables.
 #
 # TODO: return err_code (2x) instead of raise
-def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, source_id_none = '#DEFAULT_SOURCE_ID#'):
+def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files, _path_log_summary, source_id_none = '#DEFAULT_SOURCE_ID#'):
     def check_key_value_pair(argument):
         split = argument.split('#')
         if not (len(split) == 2 and len(split[0]) > 0 and len(split[1]) > 0):
@@ -203,7 +216,6 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, source_id_none = '
             tmp_id = src.split('#')[0]
             tmp_path = Path(src.split('#')[1])
             sources.append({ 'id': tmp_id, 'path': tmp_path, 'check_file': tmp_path.joinpath('.backup_src_check') })
-    
     # destination
     tmp_dst_path = Path(_dst)
     if _dst_fqdn:
@@ -234,7 +246,15 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, source_id_none = '
                 raise ArgumentTypeError(f'Please assign an ID to the exclude path.')
             backup_excludes[tmp_id].append(tmp_path)
     
-    return (0, sources, destination, keep_n_backups, backup_excludes)
+    # path_log_files
+    path_log_files = Path(_path_log_files)
+
+    # path_log_summary
+    path_log_summary = path_log_files.joinpath('latest_log_files.txt')
+    if not _path_log_summary is None:
+        path_log_summary = Path(_path_log_summary)
+    
+    return (0, sources, destination, keep_n_backups, backup_excludes, path_log_files, path_log_summary)
 
 
 # _check_requirements
@@ -314,11 +334,16 @@ def _check_requirements(sources, destination, logger):
 # @note err_code 0: OK
 #
 # TODO: err_code (4x)
-def _prepare_backup(destination, keep_n_backups, path_log_files, logger):
+def _prepare_backup(destination, keep_n_backups, path_log_files, path_log_summary, logger):
     # Create log-files directory
     if not path_log_files.exists():
         logger.info(f'Creating log-files directory: "{path_log_files.absolute()}"')
         path_log_files.mkdir(parents=True)
+    
+    # Create directory containing log-summary
+    if not path_log_summary.parent.exists():
+        logger.info(f'Creating directory for log-summary: "{path_log_summary.absolute()}"')
+        path_log_summary.parent.mkdir(parents=True)
 
     backup_to_tmp = destination['path'].joinpath('tmp_partial_backup')
 
@@ -363,11 +388,13 @@ def _prepare_backup(destination, keep_n_backups, path_log_files, logger):
 # @param Path   path_log_files
 # @param        logger
 #
-# @return <err_code>
+# @return <err_code>, <log_files>
 #
 # err_code (5x)
 def _do_backup(sources, source_id_none, destination, backup_excludes,
               datetime_string_now, path_log_files, logger):
+    log_files = []
+
     backup_to_tmp = destination['path'].joinpath('tmp_partial_backup')
 
     # Get path to latest backup for --link-dest (higher-layer)
@@ -417,6 +444,7 @@ def _do_backup(sources, source_id_none, destination, backup_excludes,
         else:
             tmp_logfile_filename = f'{datetime_string_now}_rsync.log'
         rsync_cmd_arg_log_file = f'--log-file "{path_log_files.joinpath(tmp_logfile_filename).absolute()}" '
+        log_files.append(path_log_files.joinpath(tmp_logfile_filename))
 
         # Create dst-path string
         tmp_dst = backup_to_tmp
@@ -435,7 +463,7 @@ def _do_backup(sources, source_id_none, destination, backup_excludes,
     logger.info(f'Renaming tmp_partial_backup folder to "{path_backup.stem}".')
     backup_to_tmp.rename(path_backup)
 
-    return 0
+    return 0, log_files
 
 
 # backup
@@ -444,6 +472,7 @@ def _do_backup(sources, source_id_none, destination, backup_excludes,
 #
 # @param dict   arguments
 # @param Path   path_log_files
+# @param Path   path_log_summary
 # @param        logger
 #
 # @return <err_code>
@@ -463,19 +492,21 @@ def _do_backup(sources, source_id_none, destination, backup_excludes,
 # @note err_code 4x: function _prepare_backup()
 #
 # @note err_code 5x: function _do_backup()
-def backup(arguments = None, path_log_files = None, logger = None):
+def backup(arguments = None, logger = None):
     datetime_string_now = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
+    
+    log_files = []
 
-    if path_log_files is None:
-        path_log_files = Path('log-files')
-    if not path_log_files.exists():
-        path_log_files.mkdir(parents=True)
-
+    log_file_filename = None
+    tmp_path_log_file = None
     if logger is None:
+        # log file will be moved into log-files directory later
+        log_file_filename = f'{datetime_string_now}_incremental_backup.log'
+        tmp_path_log_file = Path(log_file_filename)
         logger = logHandler.get_logger(name=__name__,
                                         stream_logger={ 'log_level': logHandler.DEBUG, 'stream': None },
                                         file_logger={ 'log_level': logHandler.DEBUG,
-                                                      'filename': path_log_files.joinpath(f'{datetime_string_now}_incremental_backup.log').absolute(),
+                                                      'filename': tmp_path_log_file.absolute(),
                                                       'write_mode': 'a' },
                                         mode=None)
 
@@ -489,18 +520,27 @@ def backup(arguments = None, path_log_files = None, logger = None):
         destination = None
         keep_n_backups = None
         backup_excludes = None
+        path_log_files = None
+        path_log_summary = None
 
         if arguments is None:
-            err_code, sources, destination, keep_n_backups, backup_excludes = _process_argparse('#NO_SOURCE_ID_SPECIFIED#')
+            err_code, sources, destination, keep_n_backups, backup_excludes, path_log_files, path_log_summary = _process_argparse('#NO_SOURCE_ID_SPECIFIED#')
         else:
             _src = arguments['src']
             _dst = arguments['dst']
             _keep = arguments['keep']
             _exclude = arguments['exclude']
             _dst_fqdn = arguments['dst_fqdn']
-            err_code, sources, destination, keep_n_backups, backup_excludes = _process_arguments(_src, _dst, _keep,
+            _path_log_files = arguments['path_log_files']
+            _path_log_summary = arguments['path_log_summary']
+            err_code, sources, destination, keep_n_backups, backup_excludes, path_log_files, path_log_summary = _process_arguments(_src, _dst, _keep,
                                                                                                  _exclude, _dst_fqdn,
+                                                                                                 _path_log_files, _path_log_summary,
                                                                                                  '#NO_SOURCE_ID_SPECIFIED#')
+
+        path_log_file = path_log_files.joinpath(log_file_filename)
+        log_files.append(path_log_file)
+
         if err_code != 0:
             return_code = err_code
             raise Exception()
@@ -512,20 +552,37 @@ def backup(arguments = None, path_log_files = None, logger = None):
             raise Exception()
         
         # Prepare backup
-        err_code = _prepare_backup(destination, keep_n_backups, path_log_files, logger)
+        err_code = _prepare_backup(destination, keep_n_backups, path_log_files, path_log_summary, logger)
         if err_code != 0:
             return_code = err_code
             raise Exception()
         
         # Do backup
-        err_code = _do_backup(sources, '#NO_SOURCE_ID_SPECIFIED#', destination, backup_excludes, datetime_string_now, path_log_files, logger)
+        err_code, tmp_log_files = _do_backup(sources, '#NO_SOURCE_ID_SPECIFIED#', destination, backup_excludes, datetime_string_now, path_log_files, logger)
+        log_files = [ *log_files, *tmp_log_files ]
         if err_code != 0:
             return_code = err_code
             raise Exception()
     except Exception:
         logger.critical(f'An error occured. Terminating backup process at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}.')
 
+    # List all log-files and write their paths to file
+    logger.info('The following log-files were created:')
+    for tmp_log_file in log_files:
+        logger.info(f'↳ {tmp_log_file.absolute()}')
+    
+    with open(f'{path_log_summary}', 'w') as file:
+        for tmp_log_file in log_files:
+            file.write(f'{tmp_log_file.absolute()}\n')
+
+    if not tmp_log_file is None:
+        logger.info('Log-file will be moved to log-files directory after the next message.')
+    
     logger.info(f'IncrementalBackup finished at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
+
+    # Move log-file
+    if not tmp_path_log_file is None:
+        tmp_path_log_file.rename(path_log_files.joinpath(tmp_path_log_file.name))
 
     return return_code
 
