@@ -194,14 +194,24 @@ Examples:
 # @note See comments at the top of this file for more information on the
 #           structure of the variables.
 #
-# TODO: return err_code (2x) instead of raise
+# @note err_code  0: OK
+# @note err_code 21: ArgumentTypeError: one or more sources have an invalid
+#                    key#value pair
+# @note err_code 22: ArgumentTypeError: one or more excludes have an invalid
+#                    key#value pair
+# @note err_code 23: Error: Exclude-ID was not assigned to any source
+# @note err_code 24: Error: Exclude cannot be associated with any source
+# @note err_code 25: Error: Exclude was not assigned an id
 def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
                       _path_log_summary, _source_id_none = '#DEFAULT_SOURCE_ID#'):
+    # @return <err_code>
+    # @note err_code 0: OK
+    # @note err_code 1: ArgumentTypeError: Invalid key#value pair
     def check_key_value_pair(argument):
         split = argument.split('#')
         if not (len(split) == 2 and len(split[0]) > 0 and len(split[1]) > 0):
-            raise ArgumentTypeError(f'{argument} is an invalid key#value pair')
-        return argument
+            return 1
+        return 0
     
     # Prepare <sources> variable
     sources = []
@@ -212,7 +222,9 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
 
         src = _src[0]
         if '#' in src:
-            check_key_value_pair(src)
+            if check_key_value_pair(src) != 0:
+                # ArgumentTypeError: Invalid key#value pair
+                return (21, None, None, None, None, None, None)
             tmp_id = src.split('#')[0]
             tmp_path = Path(src.split('#')[1])
         else:
@@ -223,7 +235,9 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
     else:
         # multiple sources
         for i_src in _src:
-            check_key_value_pair(i_src)
+            if check_key_value_pair(i_src) != 0:
+                # ArgumentTypeError: Invalid key#value pair
+                return (21, None, None, None, None, None, None)
             tmp_id = i_src.split('#')[0]
             tmp_path = Path(i_src.split('#')[1])
             sources.append({ 'id': tmp_id, 'path': tmp_path,
@@ -245,19 +259,24 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
         backup_excludes[i_source['id']] = []
     for i_exclude in _exclude:
         if '#' in i_exclude:
-            check_key_value_pair(i_exclude)
+            if check_key_value_pair(i_exclude) != 0:
+                # ArgumentTypeError: Invalid key#value pair
+                return (22, None, None, None, None, None, None)
             tmp_id = i_exclude.split('#')[0]
             tmp_path = i_exclude.split('#')[1]
             if not tmp_id in [i_source['id'] for i_source in sources]:
-                raise ArgumentTypeError(f'Id "{tmp_id}" was not assigned to any source. Check --exclude.')
+                # Error: Exclude-ID was not assigned to any source
+                return (23, None, None, None, None, None, None)
             backup_excludes[tmp_id].append(tmp_path)
         else:
             tmp_id = _source_id_none
             tmp_path = i_exclude
             if len(sources) > 1:
-                raise ArgumentTypeError(f'Exclude-path cannot be associated with any source. Assigning an id to the exclude-path is required when using multiple sources.')
+                # Error: Exclude cannot be associated with any source
+                return (24, None, None, None, None, None, None)                
             if not sources[0]['id'] == _source_id_none:
-                raise ArgumentTypeError(f'Please assign an ID to the exclude path.')
+                # Error: Exclude was not assigned an id
+                return (25, None, None, None, None, None, None)
             backup_excludes[tmp_id].append(tmp_path)
     
     # Prepare <path_log_files> variable
@@ -518,6 +537,13 @@ def _do_backup(_sources, _source_id_none, _destination, _backup_excludes,
 # @note err_code 12: ArgumentTypeError: <dst_fqdn> must be true, false, 0 or 1
 #
 # @note err_code 2x: function _process_arguments()
+# @note err_code 21: ArgumentTypeError: one or more sources have an invalid
+#                    key#value pair
+# @note err_code 22: ArgumentTypeError: one or more excludes have an invalid
+#                    key#value pair
+# @note err_code 23: Error: Exclude-ID was not assigned to any source
+# @note err_code 24: Error: Exclude cannot be associated with any source
+# @note err_code 25: Error: Exclude was not assigned an id
 #
 # @note err_code 3x: function _check_requirements()
 # @note err_code 31: one or more data directories not found
