@@ -134,6 +134,45 @@ python3 IncrementalBackup.py --src /data --dst /backup --keep 5
 be recycled; the execution time can be drastically reduced.
 
 
+## Error-Codes
+
+**Code 1x - Error in function _process_argparse(...)**
+
+- Code 11: \<keep\> must be positive int
+
+- Code 12: \<dst_fqdn\> must be true, false, 0 or 1
+
+**Code 2x: Error in function _process_arguments(...)**
+
+- Code 21: One or more sources have an invalid key#value pair
+
+- Code 22: One or more excludes have an invalid key#value
+  pair
+
+- Code 23: Exclude-ID was not assigned to any source
+
+- Code 24: Exclude cannot be associated with any source
+
+- Code 25: Exclude was not assigned an id
+
+**Code 3x: Error in function _check_requirements(...)**
+
+- Code 31: One or more data directories not found
+
+- Code 32: Backup directory not found
+
+- Code 33: One or more source-check-files not found
+
+- Code 34: Destination-check-file not found
+
+**Code 4x: Error in function _prepare_backup(...)**
+
+*This function does not return any error codes.*
+
+**Code 5x: Error in function _do_backup(...)**
+
+*This function does not return any error codes.*
+
 
 # Limitations
 
