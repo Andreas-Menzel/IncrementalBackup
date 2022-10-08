@@ -14,8 +14,6 @@
 # TODO
 # - Exception Handling rsync
 #
-# - def send log files on error
-#
 # Evtl. Probleme:
 # - Log-Datei nicht im richtigen Ordner
 
@@ -72,15 +70,11 @@ _SCRIPT_VERSION = '1.0.0'
 # @note See comments at the top of this file for more information on the
 #           structure of the variables.
 #
-# TODO: log error and return err_code (1x) instead of raise
+# @note err_code  0: OK
+# @note err_code 11: ArgumentTypeError: <keep> must be positive int
+# @note err_code 12: ArgumentTypeError: <dst_fqdn> must be true, false, 0 or 1
 def _process_argparse(_source_id_none = '#DEFAULT_SOURCE_ID#'):
     global _SCRIPT_VERSION
-
-    def check_not_negative(argument):
-        ivalue = int(argument)
-        if ivalue < 0:
-            raise ArgumentTypeError(f'{argument} is an invalid non-negative int value.')
-        return ivalue
     
     parser_description = '''
 %(prog)s is a wrapper for rsync and provides an easy interface for a safe and efficient backup process.
@@ -138,7 +132,6 @@ Examples:
         help='Show the program\'s version number and exit')
     optional_args.add_argument('--keep',
         default=0,
-        type=check_not_negative,
         help='Number of backups to keep. 0 = no limit (default). NOTE: THIS WILL DELETE ALL BUT THE LAST <KEEP> BACKUPS!')
     optional_args.add_argument('--exclude',
         default=[],
@@ -156,12 +149,26 @@ Examples:
 
     args = parser.parse_args()
 
-    if (args.dst_fqdn.lower() == 'true' or args.dst_fqdn == '1'):
-        args.dst_fqdn = True
-    else:
-        args.dst_fqdn = False
+    # Convert args.keep to int
+    try:
+        keep = int(args.keep)
+        if keep < 0:
+            raise ArgumentTypeError()
+    except:
+        return (11, None, None, None, None, None, None)
+
+    # Convert <dst_fqdn> to bool
+    try:
+        if (args.dst_fqdn.lower() == 'true' or args.dst_fqdn == '1'):
+            args.dst_fqdn = True
+        elif (args.dst_fqdn.lower() == 'false' or args.dst_fqdn == '0'):
+            args.dst_fqdn = False
+        else:
+            raise ArgumentTypeError()
+    except:
+        return (12, None, None, None, None, None, None)
     
-    return process_arguments(_src=args.src, _dst=args.dst, _keep=args.keep,
+    return process_arguments(_src=args.src, _dst=args.dst, _keep=keep,
                              _exclude=args.exclude, _dst_fqdn=args.dst_fqdn,
                              _path_log_files=args.path_log_files,
                              _path_log_summary=args.log_summary,
@@ -507,6 +514,8 @@ def _do_backup(_sources, _source_id_none, _destination, _backup_excludes,
 # @note err_code 0: OK
 #
 # @note err_code 1x: function _process_argparse()
+# @note err_code 11: ArgumentTypeError: <keep> must be positive int
+# @note err_code 12: ArgumentTypeError: <dst_fqdn> must be true, false, 0 or 1
 #
 # @note err_code 2x: function _process_arguments()
 #
