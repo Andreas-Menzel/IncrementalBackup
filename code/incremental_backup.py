@@ -14,8 +14,13 @@
 # TODO
 # - Exception Handling rsync
 #
-# Evtl. Probleme:
-# - Log-Datei nicht im richtigen Ordner
+# - _process_arguments: _src auch als str übergeben; nicht nur [str]
+# - _prepare_backup / _do_backup: get old backups: nur mit datetime Format
+# - recycle: same ids? Remove not used ids
+# - source: err_code wenn mehrfach selbe id verwendet wird
+# - Wenn error: log-files dir existiert evtl. nicht.
+# - before backup: check read / write access
+# - <id>, <path>: nur bestimmte Zeichen erlauben(?)
 
 import logHandler
 
@@ -62,6 +67,7 @@ _SCRIPT_VERSION = '1.0.0'
 #
 # Uses argparse to process the arguments given to the script.
 #
+# @param        _logger
 # @param str    _source_id_none
 #
 # @return (<err_code>, <sources>, <destination>, <keep_n_backups>,
@@ -73,7 +79,7 @@ _SCRIPT_VERSION = '1.0.0'
 # @note err_code  0: OK
 # @note err_code 11: ArgumentTypeError: <keep> must be positive int
 # @note err_code 12: ArgumentTypeError: <dst_fqdn> must be true, false, 0 or 1
-def _process_argparse(_source_id_none = '#DEFAULT_SOURCE_ID#'):
+def _process_argparse(_logger, _source_id_none = '#DEFAULT_SOURCE_ID#'):
     global _SCRIPT_VERSION
     
     parser_description = '''
@@ -155,6 +161,7 @@ Examples:
         if keep < 0:
             raise ArgumentTypeError()
     except:
+        _logger.error('<keep> must be a positive integer value.')
         return (11, None, None, None, None, None, None)
 
     # Convert <dst_fqdn> to bool
@@ -166,6 +173,7 @@ Examples:
         else:
             raise ArgumentTypeError()
     except:
+        _logger.error('<dst_fqdn> must be a boolean value.')
         return (12, None, None, None, None, None, None)
     
     return process_arguments(_src=args.src, _dst=args.dst, _keep=keep,
@@ -224,6 +232,7 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
         if '#' in src:
             if check_key_value_pair(src) != 0:
                 # ArgumentTypeError: Invalid key#value pair
+                _logger.error(f'Invalid key#value pair for source: "{src}"')
                 return (21, None, None, None, None, None, None)
             tmp_id = src.split('#')[0]
             tmp_path = Path(src.split('#')[1])
@@ -237,6 +246,7 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
         for i_src in _src:
             if check_key_value_pair(i_src) != 0:
                 # ArgumentTypeError: Invalid key#value pair
+                _logger.error(f'Invalid key#value pair for source: "{i_src}"')
                 return (21, None, None, None, None, None, None)
             tmp_id = i_src.split('#')[0]
             tmp_path = Path(i_src.split('#')[1])
@@ -261,11 +271,13 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
         if '#' in i_exclude:
             if check_key_value_pair(i_exclude) != 0:
                 # ArgumentTypeError: Invalid key#value pair
+                _logger.error(f'Invalid key#value pair for exclude: "{i_exclude}"')
                 return (22, None, None, None, None, None, None)
             tmp_id = i_exclude.split('#')[0]
             tmp_path = i_exclude.split('#')[1]
             if not tmp_id in [i_source['id'] for i_source in sources]:
                 # Error: Exclude-ID was not assigned to any source
+                _logger.error(f'Exclude ID "{tmp_id}" was not assigned to any source.')
                 return (23, None, None, None, None, None, None)
             backup_excludes[tmp_id].append(tmp_path)
         else:
@@ -273,9 +285,11 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
             tmp_path = i_exclude
             if len(sources) > 1:
                 # Error: Exclude cannot be associated with any source
+                _logger.error('Exclude cannot be associated with any source.')
                 return (24, None, None, None, None, None, None)                
             if not sources[0]['id'] == _source_id_none:
                 # Error: Exclude was not assigned an id
+                _logger.error('Exclude was not assigned an id.')
                 return (25, None, None, None, None, None, None)
             backup_excludes[tmp_id].append(tmp_path)
     
@@ -586,7 +600,7 @@ def backup(arguments = None, logger = None):
         path_log_summary = None
 
         if arguments is None:
-            err_code, sources, destination, keep_n_backups, backup_excludes, path_log_files, path_log_summary = _process_argparse('#NO_SOURCE_ID_SPECIFIED#')
+            err_code, sources, destination, keep_n_backups, backup_excludes, path_log_files, path_log_summary = _process_argparse(logger, '#NO_SOURCE_ID_SPECIFIED#')
         else:
             _src = arguments['src']
             _dst = arguments['dst']
