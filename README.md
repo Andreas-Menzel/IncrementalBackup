@@ -167,14 +167,6 @@ be recycled; the execution time can be drastically reduced.
 
 - Code 34: Destination-check-file not found
 
-**Code 4x: Error in function _prepare_backup(...)**
-
-*This function does not return any error codes.*
-
-**Code 5x: Error in function _do_backup(...)**
-
-*This function does not return any error codes.*
-
 
 # Limitations
 
