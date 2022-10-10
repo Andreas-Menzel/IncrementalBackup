@@ -146,14 +146,16 @@ be recycled; the execution time can be drastically reduced.
 
 - Code 21: One or more sources have an invalid key#value pair
 
-- Code 22: One or more excludes have an invalid key#value
+- Code 22: Source-id is used more than once
+
+- Code 23: One or more excludes have an invalid key#value
   pair
 
-- Code 23: Exclude-ID was not assigned to any source
+- Code 24: Exclude-ID was not assigned to any source
 
-- Code 24: Exclude cannot be associated with any source
+- Code 25: Exclude cannot be associated with any source
 
-- Code 25: Exclude was not assigned an id
+- Code 26: Exclude was not assigned an id
 
 **Code 3x: Error in function _check_requirements(...)**
 

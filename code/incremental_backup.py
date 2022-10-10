@@ -16,7 +16,6 @@
 #
 # - _process_arguments: _src auch als str übergeben; nicht nur [str]
 # - _prepare_backup / _do_backup: get old backups: nur mit datetime Format
-# - Wenn error: log-files dir existiert evtl. nicht.
 # - before backup: check read / write access
 # - <id>, <path>: nur bestimmte Zeichen erlauben(?)
 
@@ -251,6 +250,7 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
             tmp_path = Path(i_src.split('#')[1])
             # Check if source-id is unique
             if tmp_id in [i_source['id'] for i_source in sources]:
+                # Source id is used more than once
                 _logger.error(f'Source id "{tmp_id}" must be unique.')
                 return (22, None, None, None, None, None, None)
             sources.append({ 'id': tmp_id, 'path': tmp_path,
@@ -392,18 +392,7 @@ def _check_requirements(_sources, _destination, _logger):
 # @note err_code 0: OK
 #
 # (@note err_code: 4x)
-def _prepare_backup(_sources, _destination, _keep_n_backups, _path_log_files,
-                    _path_log_summary, _logger):
-    # Create log-files directory
-    if not _path_log_files.exists():
-        _logger.info(f'Creating log-files directory: "{_path_log_files.absolute()}"')
-        _path_log_files.mkdir(parents=True)
-    
-    # Create directory containing log-summary file
-    if not _path_log_summary.parent.exists():
-        _logger.info(f'Creating directory for log-summary file: "{_path_log_summary.absolute()}"')
-        _path_log_summary.parent.mkdir(parents=True)
-
+def _prepare_backup(_sources, _destination, _keep_n_backups, _logger):
     backup_to_tmp = _destination['path'].joinpath('tmp_partial_backup')
 
     # Get old backups
@@ -558,6 +547,36 @@ def _do_backup(_sources, _source_id_none, _destination, _backup_excludes,
     return 0, log_files
 
 
+# _prepare_logging
+#
+# Create directories for logging
+#
+# @param Path   _path_log_files
+# @param Path   _path_log_summary
+# @param        _logger
+#
+# @return <err_code>
+#
+# @note err_code  0: OK
+# @note err_code 41: Cannot create directory for log-summary file
+def _prepare_logging(_path_log_files, _path_log_summary, _logger):
+    # Create log-files directory
+    if not (_path_log_files.exists() and _path_log_files.is_dir()):
+        _logger.info(f'Creating log-files directory: "{_path_log_files.absolute()}"')
+        _path_log_files.mkdir(parents=True)
+    
+    # Create directory containing log-summary file
+    if not _path_log_summary.parent.exists():
+        _logger.info(f'Creating directory for log-summary file: "{_path_log_summary.parent.absolute()}"')
+        _path_log_summary.parent.mkdir(parents=True)
+    elif (_path_log_summary.parent.exists() and not _path_log_summary.parent.is_dir()):
+        _logger.error('Cannot create directory for log-summary file.')
+        _logger.error(f'Maybe a file with that name already exists? "{_path_log_summary.parent.absolute()}"')
+        return 1
+    
+    return 0
+
+
 # backup
 #
 # Start a backup.
@@ -578,11 +597,12 @@ def _do_backup(_sources, _source_id_none, _destination, _backup_excludes,
 # @note err_code 2x: function _process_arguments()
 # @note err_code 21: ArgumentTypeError: one or more sources have an invalid
 #                    key#value pair
-# @note err_code 22: ArgumentTypeError: one or more excludes have an invalid
+# @note err_code 22: Source-id used more than once
+# @note err_code 23: ArgumentTypeError: one or more excludes have an invalid
 #                    key#value pair
-# @note err_code 23: Error: Exclude-ID was not assigned to any source
-# @note err_code 24: Error: Exclude cannot be associated with any source
-# @note err_code 25: Error: Exclude was not assigned an id
+# @note err_code 24: Error: Exclude-ID was not assigned to any source
+# @note err_code 25: Error: Exclude cannot be associated with any source
+# @note err_code 26: Error: Exclude was not assigned an id
 #
 # @note err_code 3x: function _check_requirements()
 # @note err_code 31: one or more data directories not found
@@ -590,9 +610,8 @@ def _do_backup(_sources, _source_id_none, _destination, _backup_excludes,
 # @note err_code 33: one or more source-check-files not found
 # @note err_code 34: destination-check-file not found
 #
-# @note err_code 4x: function _prepare_backup()
-#
-# @note err_code 5x: function _do_backup()
+# @note err_code 4x: function _prepare_logging()
+# @note err_code 41: Cannot create directory for log-summary file
 def backup(arguments = None, logger = None):
     datetime_string_now = datetime.today().strftime('%Y-%m-%d_%H:%M:%S')
     
@@ -638,10 +657,17 @@ def backup(arguments = None, logger = None):
                                                                                                  _exclude, _dst_fqdn,
                                                                                                  _path_log_files, _path_log_summary,
                                                                                                  '#NO_SOURCE_ID_SPECIFIED#')
+        
+        if err_code != 0:
+            return_code = err_code
+            raise Exception()
 
         path_log_file = path_log_files.joinpath(log_file_filename)
         log_files.append(path_log_file)
 
+        # Prepare logging
+        err_code = _prepare_logging(path_log_files, path_log_summary, logger)
+        
         if err_code != 0:
             return_code = err_code
             raise Exception()
@@ -653,7 +679,7 @@ def backup(arguments = None, logger = None):
             raise Exception()
         
         # Prepare backup
-        err_code = _prepare_backup(sources, destination, keep_n_backups, path_log_files, path_log_summary, logger)
+        err_code = _prepare_backup(sources, destination, keep_n_backups, logger)
         if err_code != 0:
             return_code = err_code
             raise Exception()
@@ -672,11 +698,12 @@ def backup(arguments = None, logger = None):
     for tmp_log_file in log_files:
         logger.info(f'↳ {tmp_log_file.absolute()}')
     
-    with open(f'{path_log_summary}', 'w') as file:
-        for tmp_log_file in log_files:
-            file.write(f'{tmp_log_file.absolute()}\n')
+    if path_log_summary.exists() and path_log_summary.is_file():
+        with open(f'{path_log_summary}', 'w') as file:
+            for tmp_log_file in log_files:
+                file.write(f'{tmp_log_file.absolute()}\n')
 
-    if not tmp_log_file is None:
+    if not tmp_path_log_file is None:
         logger.info('This log-file will be moved to log-files directory after the next message.')
     
     logger.info(f'IncrementalBackup finished at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
