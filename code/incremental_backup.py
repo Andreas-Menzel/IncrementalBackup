@@ -16,8 +16,6 @@
 #
 # - _process_arguments: _src auch als str übergeben; nicht nur [str]
 # - _prepare_backup / _do_backup: get old backups: nur mit datetime Format
-# - recycle: same ids? Remove not used ids
-# - source: err_code wenn mehrfach selbe id verwendet wird
 # - Wenn error: log-files dir existiert evtl. nicht.
 # - before backup: check read / write access
 # - <id>, <path>: nur bestimmte Zeichen erlauben(?)
@@ -205,11 +203,12 @@ Examples:
 # @note err_code  0: OK
 # @note err_code 21: ArgumentTypeError: one or more sources have an invalid
 #                    key#value pair
-# @note err_code 22: ArgumentTypeError: one or more excludes have an invalid
+# @note err_code 22: Source-id used more than once
+# @note err_code 23: ArgumentTypeError: one or more excludes have an invalid
 #                    key#value pair
-# @note err_code 23: Error: Exclude-ID was not assigned to any source
-# @note err_code 24: Error: Exclude cannot be associated with any source
-# @note err_code 25: Error: Exclude was not assigned an id
+# @note err_code 24: Error: Exclude-ID was not assigned to any source
+# @note err_code 25: Error: Exclude cannot be associated with any source
+# @note err_code 26: Error: Exclude was not assigned an id
 def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
                       _path_log_summary, _source_id_none = '#DEFAULT_SOURCE_ID#'):
     # @return <err_code>
@@ -250,6 +249,10 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
                 return (21, None, None, None, None, None, None)
             tmp_id = i_src.split('#')[0]
             tmp_path = Path(i_src.split('#')[1])
+            # Check if source-id is unique
+            if tmp_id in [i_source['id'] for i_source in sources]:
+                _logger.error(f'Source id "{tmp_id}" must be unique.')
+                return (22, None, None, None, None, None, None)
             sources.append({ 'id': tmp_id, 'path': tmp_path,
                              'check_file': tmp_path.joinpath('.backup_src_check') })
     
@@ -272,13 +275,13 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
             if check_key_value_pair(i_exclude) != 0:
                 # ArgumentTypeError: Invalid key#value pair
                 _logger.error(f'Invalid key#value pair for exclude: "{i_exclude}"')
-                return (22, None, None, None, None, None, None)
+                return (23, None, None, None, None, None, None)
             tmp_id = i_exclude.split('#')[0]
             tmp_path = i_exclude.split('#')[1]
             if not tmp_id in [i_source['id'] for i_source in sources]:
                 # Error: Exclude-ID was not assigned to any source
                 _logger.error(f'Exclude ID "{tmp_id}" was not assigned to any source.')
-                return (23, None, None, None, None, None, None)
+                return (24, None, None, None, None, None, None)
             backup_excludes[tmp_id].append(tmp_path)
         else:
             tmp_id = _source_id_none
@@ -286,11 +289,11 @@ def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
             if len(sources) > 1:
                 # Error: Exclude cannot be associated with any source
                 _logger.error('Exclude cannot be associated with any source.')
-                return (24, None, None, None, None, None, None)                
+                return (25, None, None, None, None, None, None)                
             if not sources[0]['id'] == _source_id_none:
                 # Error: Exclude was not assigned an id
                 _logger.error('Exclude was not assigned an id.')
-                return (25, None, None, None, None, None, None)
+                return (26, None, None, None, None, None, None)
             backup_excludes[tmp_id].append(tmp_path)
     
     # Prepare <path_log_files> variable
@@ -378,6 +381,7 @@ def _check_requirements(_sources, _destination, _logger):
 # Creates log-files directories, deletes old backups and prepares the
 # tmp_partial_backup folder.
 #
+# @param dict   _sources
 # @param dict   _destination
 # @param int    _keep_n_backups
 # @param Path   _path_log_files
@@ -388,7 +392,7 @@ def _check_requirements(_sources, _destination, _logger):
 # @note err_code 0: OK
 #
 # (@note err_code: 4x)
-def _prepare_backup(_destination, _keep_n_backups, _path_log_files,
+def _prepare_backup(_sources, _destination, _keep_n_backups, _path_log_files,
                     _path_log_summary, _logger):
     # Create log-files directory
     if not _path_log_files.exists():
@@ -424,11 +428,32 @@ def _prepare_backup(_destination, _keep_n_backups, _path_log_files,
     # Create tmp_partial_backup folder
     if not backup_to_tmp.exists():
         if _keep_n_backups > 0 and len(paths_old_backups) == _keep_n_backups:
-            print('A')
-            # recycle old backup
+            # Recycle old backup
             backup_to_recycle = min(paths_old_backups)
-            _logger.info(f'Recycling old backup: "{backup_to_recycle.absolute()}"')
-            backup_to_recycle.rename(_destination['path'].joinpath('tmp_partial_backup'))
+            _logger.info(f'Preparing to recycle old backup: "{backup_to_recycle.absolute()}"...')
+            backup_to_recycle.rename(backup_to_tmp)
+
+            # Remove files and dirs (if backup had different source ids)
+            if not (len(_sources) == 1 and _sources[0] == source_id_none):
+                # All files
+                files_to_remove = [ i_file for i_file in backup_to_tmp.iterdir()
+                                    if i_file.is_file() ]
+                # All dirs except source-id subfolders
+                dirs_to_remove = [ i_dir for i_dir in backup_to_tmp.iterdir()
+                                    if i_dir.is_dir() and \
+                                    not i_dir.name in [i_source['id'] for i_source in _sources] ]
+                
+                # Delete files
+                for i_file in files_to_remove:
+                    _logger.info(f'↳ Deleting file "{i_file.absolute()}".')
+                    i_file.unlink()
+                
+                # Delete directories
+                for i_dir in dirs_to_remove:
+                    _logger.info(f'↳ Deleting directory "{i_dir.absolute()}".')
+                    rmtree(i_dir)
+            
+            _logger.info('OK.')
         else:
             backup_to_tmp.mkdir(parents=True)
 
@@ -584,7 +609,7 @@ def backup(arguments = None, logger = None):
                                         file_logger={ 'log_level': logHandler.DEBUG,
                                                       'filename': tmp_path_log_file.absolute(),
                                                       'write_mode': 'a' },
-                                        mode=None)
+                                        mode='normal')
 
     logger.info(f'IncrementalBackup started at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
     
@@ -628,7 +653,7 @@ def backup(arguments = None, logger = None):
             raise Exception()
         
         # Prepare backup
-        err_code = _prepare_backup(destination, keep_n_backups, path_log_files, path_log_summary, logger)
+        err_code = _prepare_backup(sources, destination, keep_n_backups, path_log_files, path_log_summary, logger)
         if err_code != 0:
             return_code = err_code
             raise Exception()
