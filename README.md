@@ -136,7 +136,7 @@ be recycled; the execution time can be drastically reduced.
 
 ## Keep in mind
 
-\<id\> and \<path\> must not contain the substring *~#~*.
+\<id\> and \<path\> must not contain the substring *\~#\~*.
 
 
 ## Error-Codes
