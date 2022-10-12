@@ -15,7 +15,6 @@
 # - Exception Handling rsync
 #
 # - before backup: check read / write access
-# - <id>, <path>: nur bestimmte Zeichen erlauben(?)
 
 import logHandler
 
@@ -120,10 +119,10 @@ Examples:
         python3 %(prog)s --src /data --dst /backup --exclude /data/exclude_me/ /data/me_too.md
 
     Backup multiple sources:
-        python3 %(prog)s --scr DATA#/data WWW#/var/www --dst /backup
+        python3 %(prog)s --scr DATA~#~/data WWW~#~/var/www --dst /backup
 
     ... with excludes:
-        python3 %(prog)s --src DATA#/data WWW#/var/www --dst /backup --exclude DATA#/data/exclude_me/ WWW#/var/www/me_too.md        
+        python3 %(prog)s --src DATA~#~/data WWW~#~/var/www --dst /backup --exclude DATA~#~/data/exclude_me/ WWW~#~/var/www/me_too.md        
     '''
     parser = ArgumentParser(description=parser_description,
                             prog='IncrementalBackup.py',
@@ -135,7 +134,7 @@ Examples:
 
     required_args.add_argument('--src',
         nargs='+',
-        help='Format: <path>|<id>#<path>. Data directories (+ identifiers).',
+        help='Format: <path>|<id>~#~<path>. Data directories (+ identifiers).',
         required=True)
     required_args.add_argument('--dst',
         help='Format: <path>. Backup directory.',
@@ -156,7 +155,7 @@ Examples:
     optional_args.add_argument('--exclude',
         default=[],
         nargs='+',
-        help='Format: <path>|<id>#<path>. Paths (+ source identifiers) to exclude from the backup.')
+        help='Format: <path>|<id>~#~<path>. Paths (+ source identifiers) to exclude from the backup.')
     optional_args.add_argument('--dst_fqdn',
         default='True',
         help='Format: "True"|"False". Add fully qualified domain name to the backup path. Default is True.')
@@ -231,7 +230,7 @@ def _process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
     # @note err_code 0: OK
     # @note err_code 1: ArgumentTypeError: Invalid key#value pair
     def check_key_value_pair(argument):
-        split = argument.split('#')
+        split = argument.split('~#~')
         if not (len(split) == 2 and len(split[0]) > 0 and len(split[1]) > 0):
             return 1
         return 0
@@ -248,13 +247,13 @@ def _process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
         tmp_path = None
 
         src = _src[0]
-        if '#' in src:
+        if '~#~' in src:
             if check_key_value_pair(src) != 0:
-                # ArgumentTypeError: Invalid key#value pair
-                _logger.error(f'Invalid key#value pair for source: "{src}"')
+                # ArgumentTypeError: Invalid key~#~value pair
+                _logger.error(f'Invalid key~#~value pair for source: "{src}"')
                 return (21, None, None, None, None, None, None)
-            tmp_id = src.split('#')[0]
-            tmp_path = Path(src.split('#')[1])
+            tmp_id = src.split('~#~')[0]
+            tmp_path = Path(src.split('~#~')[1])
         else:
             tmp_id = _source_id_none
             tmp_path = Path(src)
@@ -264,11 +263,11 @@ def _process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
         # multiple sources
         for i_src in _src:
             if check_key_value_pair(i_src) != 0:
-                # ArgumentTypeError: Invalid key#value pair
-                _logger.error(f'Invalid key#value pair for source: "{i_src}"')
+                # ArgumentTypeError: Invalid key~#~value pair
+                _logger.error(f'Invalid key~#~value pair for source: "{i_src}"')
                 return (21, None, None, None, None, None, None)
-            tmp_id = i_src.split('#')[0]
-            tmp_path = Path(i_src.split('#')[1])
+            tmp_id = i_src.split('~#~')[0]
+            tmp_path = Path(i_src.split('~#~')[1])
             # Check if source-id is unique
             if tmp_id in [i_source['id'] for i_source in sources]:
                 # Source id is used more than once
@@ -292,13 +291,13 @@ def _process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
     for i_source in sources:
         backup_excludes[i_source['id']] = []
     for i_exclude in _exclude:
-        if '#' in i_exclude:
+        if '~#~' in i_exclude:
             if check_key_value_pair(i_exclude) != 0:
-                # ArgumentTypeError: Invalid key#value pair
-                _logger.error(f'Invalid key#value pair for exclude: "{i_exclude}"')
+                # ArgumentTypeError: Invalid key~#~value pair
+                _logger.error(f'Invalid key~#~value pair for exclude: "{i_exclude}"')
                 return (23, None, None, None, None, None, None)
-            tmp_id = i_exclude.split('#')[0]
-            tmp_path = i_exclude.split('#')[1]
+            tmp_id = i_exclude.split('~#~')[0]
+            tmp_path = i_exclude.split('~#~')[1]
             if not tmp_id in [i_source['id'] for i_source in sources]:
                 # Error: Exclude-ID was not assigned to any source
                 _logger.error(f'Exclude ID "{tmp_id}" was not assigned to any source.')

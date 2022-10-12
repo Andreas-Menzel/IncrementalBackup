@@ -24,7 +24,7 @@ message / parameter list.
 ### Parameters
 
 ```
-usage: IncrementalBackup.py --src <path>|<id>#<path> [<path>|<id>#<path> ...] --dst <path> [-h] [--version] [--keep <pos_num>] [--exclude <path>|<id>#<path> [<path>|<id>#<path> ...]]
+usage: IncrementalBackup.py --src <path>|<id>~#~<path> [<path>|<id>~#~<path> ...] --dst <path> [-h] [--version] [--keep <pos_num>] [--exclude <path>|<id>~#~<path> [<path>|<id>~#~<path> ...]]
                             [--dst_fqdn True|False]
 
 IncrementalBackup.py is a wrapper for rsync and provides an easy interface for a safe and efficient backup process.
@@ -41,7 +41,7 @@ https://github.com/Andreas-Menzel/IncrementalBackup
     
 
 required arguments:
-  --src <path>|<id>#<path> [<path>|<id>#<path> ...]
+  --src <path>|<id>~#~<path> [<path>|<id>~#~<path> ...]
                         Data directories (+ identifiers).
   --dst <path>          Backup directory.
 
@@ -49,7 +49,7 @@ optional arguments:
   -h, --help            Show this help message and exit
   --version             Show the program's version number and exit
   --keep <pos_num>      Number of backups to keep. 0 = no limit (default). NOTE: THIS WILL DELETE ALL BUT THE LAST <pos_num> BACKUPS!
-  --exclude <path>|<id>#<path> [<path>|<id>#<path> ...]
+  --exclude <path>|<id>~#~<path> [<path>|<id>~#~<path> ...]
                         Paths (+ source identifiers) to exclude from the backup.
   --dst_fqdn True|False
                         Add fully qualified domain name to the backup path. Default is True.
@@ -63,10 +63,10 @@ Examples:
         python3 IncrementalBackup.py --src /data --dst /backup --exclude /data/exclude_me/ /data/me_too.md
 
     Backup multiple sources:
-        python3 IncrementalBackup.py --scr DATA#/data WWW#/var/www --dst /backup
+        python3 IncrementalBackup.py --scr DATA~#~/data WWW~#~/var/www --dst /backup
 
     ... with excludes:
-        python3 IncrementalBackup.py --src DATA#/data WWW#/var/www --dst /backup --exclude DATA#/data/exclude_me/ WWW#/var/www/me_too.md
+        python3 IncrementalBackup.py --src DATA~#~/data WWW~#~/var/www --dst /backup --exclude DATA~#~/data/exclude_me/ WWW~#~/var/www/me_too.md
 ```
 
 ### Explanation
@@ -81,10 +81,10 @@ python3 IncrementalBackup.py --scr /data --dst /backup
 ```
 
 You can also specify more than one source directory. In this case a unique id
-must be assigned to each source in the format `<id>#<path>`:
+must be assigned to each source in the format `<id>~#~<path>`:
 
 ```
-python3 IncrementalBackup.py --scr DATA#/data WWW#/var/www --dst /backup
+python3 IncrementalBackup.py --scr DATA~#~/data WWW~#~/var/www --dst /backup
 ```
 
 You can also assign an id to the source if you are only using one source
@@ -115,10 +115,10 @@ python3 IncrementalBackup.py --src /data --dst /backup --exclude /data/exclude_m
 **If the source was assigned an id, the id must be forwarded to the
 exclude-paths:**
 
-Again: use the format `<id>#<PATH>`:
+Again: use the format `<id>~#~<PATH>`:
 
 ```
-python3 IncrementalBackup.py --src DATA#/data WWW#/var/www --dst /backup --exclude DATA#/data/exclude_me/ WWW#/var/www/me_too.md
+python3 IncrementalBackup.py --src DATA~#~/data WWW~#~/var/www --dst /backup --exclude DATA~#~/data/exclude_me/ WWW~#~/var/www/me_too.md
 ```
 
 #### Limit number of backups (optional)
@@ -132,6 +132,11 @@ python3 IncrementalBackup.py --src /data --dst /backup --keep 5
 
 **This will delete all but the latest 5 backups.** The fifth-latest backup will
 be recycled; the execution time can be drastically reduced.
+
+
+## Keep in mind
+
+\<id\> and \<path\> must not contain the substring *~#~*.
 
 
 ## Error-Codes
