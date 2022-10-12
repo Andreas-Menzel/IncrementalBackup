@@ -14,8 +14,9 @@
 # TODO
 # - Exception Handling rsync
 #
-# - _process_arguments: _src auch als str übergeben; nicht nur [str]
 # - _prepare_backup / _do_backup: get old backups: nur mit datetime Format
+#
+# - _process_arguments: _src auch als str übergeben; nicht nur [str]
 # - before backup: check read / write access
 # - <id>, <path>: nur bestimmte Zeichen erlauben(?)
 
@@ -24,6 +25,7 @@ import logHandler
 from argparse import ArgumentParser, ArgumentTypeError, SUPPRESS, RawDescriptionHelpFormatter
 from datetime import datetime
 from pathlib import Path
+import re
 from shutil import rmtree
 from socket import getfqdn
 from subprocess import run
@@ -58,6 +60,24 @@ _SCRIPT_VERSION = '1.0.0'
 # {
 #     <id_1>: [ <path_1>, ... ], ...
 # }
+
+
+# _get_old_backups
+#
+# Get the paths of previous backups located in <_path_destination>.
+#
+# @param Path   _path_destination
+#
+# @return   Returns a sorted list of backups in the <_path_destination> folder
+def _get_old_backups(_path_destination):
+    paths_old_backups = [i_path for i_path in _path_destination.iterdir()
+                         if i_path.is_dir() and \
+                            i_path.stem not in ['tmp_partial_backup'] and \
+                            not re.fullmatch('\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}', i_path.stem) is None]
+    
+    paths_old_backups.sort()
+
+    return paths_old_backups
 
 
 # _process_argparse
@@ -395,12 +415,7 @@ def _check_requirements(_sources, _destination, _logger):
 def _prepare_backup(_sources, _destination, _keep_n_backups, _logger):
     backup_to_tmp = _destination['path'].joinpath('tmp_partial_backup')
 
-    # Get old backups
-    paths_old_backups = [i_path for i_path in _destination['path'].iterdir()
-                         if i_path.is_dir()]
-    paths_old_backups = [i_path for i_path in paths_old_backups
-                         if i_path.stem not in ['tmp_partial_backup']]
-    paths_old_backups.sort()
+    paths_old_backups = _get_old_backups(_destination['path'])
 
     # Remove old backups - keep <keep_n_backups> latest backups
     if _keep_n_backups > 0:
@@ -474,12 +489,8 @@ def _do_backup(_sources, _source_id_none, _destination, _backup_excludes,
     # Get path to latest backup for --link-dest (higher-layer)
     path_latest_backup = None
     _logger.info('Looking for latest backup for --link-dest...')
-    
-    paths_old_backups = [i_path for i_path in _destination['path'].iterdir()
-                         if i_path.is_dir()]
-    paths_old_backups = [i_path for i_path in paths_old_backups
-                         if i_path.stem not in ['tmp_partial_backup']]
-    paths_old_backups.sort()
+
+    paths_old_backups = _get_old_backups(_destination['path'])
     if not paths_old_backups == []:
         path_latest_backup = max(paths_old_backups)
         _logger.info(f'Potential backup found: "{path_latest_backup.absolute()}"')
