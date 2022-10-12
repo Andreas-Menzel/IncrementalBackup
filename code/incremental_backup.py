@@ -14,7 +14,6 @@
 # TODO
 # - Exception Handling rsync
 #
-# - _process_arguments: _src auch als str übergeben; nicht nur [str]
 # - before backup: check read / write access
 # - <id>, <path>: nur bestimmte Zeichen erlauben(?)
 
@@ -202,7 +201,7 @@ Examples:
 #
 # Checks if the given arguments are valid and returns the processed variables.
 #
-# @param [str]          _src
+# @param str | [str]    _src
 # @param str            _dst
 # @param int            _keep
 # @param [str]          _exclude
@@ -236,6 +235,10 @@ def _process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
         if not (len(split) == 2 and len(split[0]) > 0 and len(split[1]) > 0):
             return 1
         return 0
+    
+    # Convert str to [str]
+    if type(_src) is str:
+        _src = [_src]
     
     # Prepare <sources> variable
     sources = []
