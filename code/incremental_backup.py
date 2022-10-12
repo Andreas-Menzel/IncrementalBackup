@@ -14,8 +14,6 @@
 # TODO
 # - Exception Handling rsync
 #
-# - _prepare_backup / _do_backup: get old backups: nur mit datetime Format
-#
 # - _process_arguments: _src auch als str übergeben; nicht nur [str]
 # - before backup: check read / write access
 # - <id>, <path>: nur bestimmte Zeichen erlauben(?)
@@ -193,14 +191,14 @@ Examples:
         _logger.error('<dst_fqdn> must be a boolean value.')
         return (12, None, None, None, None, None, None)
     
-    return process_arguments(_src=args.src, _dst=args.dst, _keep=keep,
+    return _process_arguments(_src=args.src, _dst=args.dst, _keep=keep,
                              _exclude=args.exclude, _dst_fqdn=args.dst_fqdn,
                              _path_log_files=args.path_log_files,
                              _path_log_summary=args.log_summary,
                              _source_id_none=_source_id_none)
 
 
-# process_arguments
+# _process_arguments
 #
 # Checks if the given arguments are valid and returns the processed variables.
 #
@@ -228,7 +226,7 @@ Examples:
 # @note err_code 24: Error: Exclude-ID was not assigned to any source
 # @note err_code 25: Error: Exclude cannot be associated with any source
 # @note err_code 26: Error: Exclude was not assigned an id
-def process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
+def _process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
                       _path_log_summary, _source_id_none = '#DEFAULT_SOURCE_ID#'):
     # @return <err_code>
     # @note err_code 0: OK
