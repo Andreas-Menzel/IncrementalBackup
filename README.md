@@ -172,6 +172,10 @@ be recycled; the execution time can be drastically reduced.
 
 - Code 34: Destination-check-file not found
 
+- Code 35: Don't have read permission for one or more sources
+
+- Code 36: Don't have write permission for destination
+
 
 # Limitations
 

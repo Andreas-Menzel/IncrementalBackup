@@ -11,10 +11,6 @@
 # @license: MIT License
 # @copyright: Copyright (c) 2022 Andreas Menzel
 #-------------------------------------------------------------------------------
-# TODO
-# - Exception Handling rsync
-#
-# - before backup: check read / write access
 
 import logHandler
 
@@ -333,6 +329,8 @@ def _process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
 # Checks whether the following directories and files exist:
 # - source directories, source-check files
 # - destination directory, destination-check file
+# Also checks if script has permissions to read the sources / write to the
+# destination.
 #
 # @param dict   _sources
 # @param dict   _destination
@@ -348,6 +346,8 @@ def _process_arguments(_src, _dst, _keep, _exclude, _dst_fqdn, _path_log_files,
 # @note err_code 32: destination / backup directory not found
 # @note err_code 33: one or more source-check-files not found
 # @note err_code 34: destination-check-file not found
+# @note err_code 35: don't have read permission for one or more sources
+# @note err_code 36: don't have write permission for destination
 def _check_requirements(_sources, _destination, _logger):
     err_code = 0
     
@@ -389,8 +389,50 @@ def _check_requirements(_sources, _destination, _logger):
             raise FileNotFoundError()
         else:
             _logger.info('OK.')
+        
+        # read_file
+        # @param Path   path
+        # @return 0 if file can be read. 1 otherwise
+        def read_file(path):
+            try:
+                with open(path, 'r') as file:
+                    file.read()
+                return 0
+            except:
+                return 1
+        # Check if script has read permission for sources
+        for i_source in _sources:
+            _logger.info(f'Checking if script has read permission for id "{i_source["id"]}"...')
+            if not read_file(i_source['check_file']) == 0:
+                _logger.error(f'Cannot read file: "{i_source["check_file"].absolute()}"')
+                err_code = 35
+                raise Exception()
+            else:
+                _logger.info('OK.')
+        
+        # create_file
+        # @param Path   path
+        # @return 0 if file can be created and written to. 1 otherwise
+        def create_file(path):
+            try:
+                with open(path, 'w') as file:
+                    file.write('IncrementalBackup was here!')
+                    print('A')
+                print(path)
+                return 0
+            except:
+                return 1
+        # Check if script has write permission for destination
+        _logger.info(f'Checking if script has write permission in destination...')
+        path_testfile = _destination['path'].joinpath('IncrementalBackup_checkfile')
+        if not create_file(path_testfile) == 0:
+            _logger.error(f'Cannot create file: "{path_testfile.absolute()}"')
+            err_code = 36
+            raise Exception()
+        else:
+            _logger.info('OK.')
     
-    except FileNotFoundError:
+    except Exception():
         _logger.error('WARNING: No backup will be done!')
     
     return err_code
@@ -632,6 +674,8 @@ def _prepare_logging(_path_log_files, _path_log_summary, _logger):
 # @note err_code 32: backup directory not found
 # @note err_code 33: one or more source-check-files not found
 # @note err_code 34: destination-check-file not found
+# @note err_code 35: don't have read permission for one or more sources
+# @note err_code 36: don't have write permission for destination
 #
 # @note err_code 4x: function _prepare_logging()
 # @note err_code 41: Cannot create directory for log-summary file
