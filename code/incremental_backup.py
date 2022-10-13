@@ -549,7 +549,19 @@ def _do_backup(_sources, _source_id_none, _destination, _backup_excludes,
         _logger.info('Executing the following command:')
         _logger.info(f'{rsync_cmd}')
 
-        run(rsync_cmd, shell=True)
+        rsync_execution = run(rsync_cmd, shell=True, capture_output=True)
+
+        if rsync_execution.returncode != 0:
+            _logger.error(f'An error occured while running rsync: Return code: {rsync_execution.returncode}')
+        
+        rsync_stdout = rsync_execution.stdout.decode('utf-8')
+        if not rsync_stdout == '':
+            _logger.warning(f'Rsync produced the following output on stdout:\n{rsync_stdout}')
+            _logger.warning('END OF STDOUT CAPTURE')
+        rsync_stderr = rsync_execution.stderr.decode('utf-8')
+        if not rsync_stderr == '':
+            _logger.warning(f'Rsync produced the following output on stderr:\n{rsync_stderr}')
+            _logger.warning('END OF STDERR CAPTURE')
 
     _logger.info(f'Renaming tmp_partial_backup folder to "{path_backup.stem}"...')
     backup_to_tmp.rename(path_backup)
