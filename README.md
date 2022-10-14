@@ -175,14 +175,3 @@ be recycled; the execution time can be drastically reduced.
 - Code 35: Don't have read permission for one or more sources
 
 - Code 36: Don't have write permission for destination
-
-
-# Limitations
-
-I know of the following limitations with this project. Please open an issue if
-you find anything else. I will then fix the bug or at least add it to this
-section.
-
-- **Characters used in \<id\> and \<path\>**
-
-  At the moment the \<id\> and the \<path\> must not contain the **"#"** character!
