@@ -697,7 +697,7 @@ def backup(arguments = None, logger = None):
                                                       'write_mode': 'a' },
                                         mode='normal')
 
-    logger.info(f'IncrementalBackup started at {datetime.today().strftime("%Y-%m-%d %H:%M:%S")}')
+    logger.info(f'IncrementalBackup started at {datetime_string_now}')
     
     return_code = 0
     try:
@@ -711,7 +711,7 @@ def backup(arguments = None, logger = None):
         path_log_summary = None
 
         if arguments is None:
-            err_code, sources, destination, keep_n_backups, backup_excludes, path_log_files, path_log_summary = _process_argparse(logger, '#NO_SOURCE_ID_SPECIFIED#')
+            err_code, sources, destination, keep_n_backups, backup_excludes, path_log_files, path_log_summary = _process_argparse(logger)
         else:
             _src = arguments['src']
             _dst = arguments['dst']
@@ -722,9 +722,7 @@ def backup(arguments = None, logger = None):
             _path_log_summary = arguments['path_log_summary']
             err_code, sources, destination, keep_n_backups, backup_excludes, path_log_files, path_log_summary = _process_arguments(_src, _dst, _keep,
                                                                                                  _exclude, _dst_fqdn,
-                                                                                                 _path_log_files, _path_log_summary,
-                                                                                                 '#NO_SOURCE_ID_SPECIFIED#')
-        
+                                                                                                 _path_log_files, _path_log_summary)
         if err_code != 0:
             return_code = err_code
             raise Exception()
@@ -734,7 +732,6 @@ def backup(arguments = None, logger = None):
 
         # Prepare logging
         err_code = _prepare_logging(path_log_files, path_log_summary, logger)
-        
         if err_code != 0:
             return_code = err_code
             raise Exception()
@@ -762,13 +759,13 @@ def backup(arguments = None, logger = None):
 
     # List all log-files and write their paths to file
     logger.info('The following log-files were created:')
-    for tmp_log_file in log_files:
-        logger.info(f'↳ {tmp_log_file.absolute()}')
+    for i_log_file in log_files:
+        logger.info(f'↳ {i_log_file.absolute()}')
     
     if path_log_summary.exists() and path_log_summary.is_file():
         with open(f'{path_log_summary}', 'w') as file:
-            for tmp_log_file in log_files:
-                file.write(f'{tmp_log_file.absolute()}\n')
+            for i_log_file in log_files:
+                file.write(f'{i_log_file.absolute()}\n')
 
     if not tmp_path_log_file is None:
         logger.info('This log-file will be moved to log-files directory after the next message.')
@@ -777,7 +774,7 @@ def backup(arguments = None, logger = None):
 
     # Move log-file
     if not tmp_path_log_file is None:
-        tmp_path_log_file.rename(path_log_files.joinpath(tmp_path_log_file.name))
+        tmp_path_log_file.rename(path_log_files.joinpath(log_file_filename))
 
     return return_code
 
